@@ -18,6 +18,11 @@ $CI_FIRESTORE_HOST       = "localhost:8086"
 $CI_STORAGE_HOST         = "http://localhost:9023"   # set $null if no GCS
 $CI_REDIS_URL            = "redis://localhost:6399/0"
 
+# Runtime versions (canonical for local CI; keep .python-version and .nvmrc in sync)
+$CI_PYTHON_VERSION = "3.11"
+$CI_NODE_VERSION   = "20"
+
+
 # Python
 $CI_PYTHONPATH_EXTRA     = @("$ROOT\entrypoint_backend")   # empty array if not needed
 $CI_CATALOG_DIR          = "$ROOT\modules\catalog_api_public\data\catalog_source"   # or $null

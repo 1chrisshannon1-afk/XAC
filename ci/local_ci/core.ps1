@@ -111,16 +111,18 @@ Action: Run 'docker compose -f $CI_COMPOSE_FILE down --remove-orphans' then '...
 }
 Write-Host "  Containers are up and healthy." -ForegroundColor Green
 
-# ── Detect Python 3.10/3.11 ───────────────────────────────────────────────────
+# ── Detect Python version (from config $CI_PYTHON_VERSION, default 3.11) ───────
+$requiredPy = if ($CI_PYTHON_VERSION) { $CI_PYTHON_VERSION } else { "3.11" }
 $pyVer = (python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>$null)
 $PY = "python"
-if ($pyVer -and ($pyVer -notmatch '^3\.(10|11)$')) {
-    $py311Path = (py -3.11 -c "import sys; print(sys.executable)" 2>$null)
-    if ($py311Path -and (Test-Path $py311Path.Trim())) {
-        $PY = $py311Path.Trim()
-        Write-Host "  Using Python 3.11 (default is $pyVer)" -ForegroundColor Gray
+$pyMatch = "^$($requiredPy -replace ''\.'',''\.'')$"
+if ($pyVer -and ($pyVer -notmatch $pyMatch)) {
+    $pyPath = (py "-$requiredPy" -c "import sys; print(sys.executable)" 2>$null)
+    if ($pyPath -and (Test-Path $pyPath.Trim())) {
+        $PY = $pyPath.Trim()
+        Write-Host "  Using Python $requiredPy (default is $pyVer)" -ForegroundColor Gray
     } else {
-        Write-Host "  ERROR: Python $pyVer detected. CI requires 3.10 or 3.11." -ForegroundColor Red
+        Write-Host "  ERROR: Python $pyVer detected. CI requires $requiredPy (set `$CI_PYTHON_VERSION in config.ps1)." -ForegroundColor Red
         exit 1
     }
 }

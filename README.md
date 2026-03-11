@@ -40,3 +40,10 @@ To publish _XAC to the XAC GitHub repo, see **docs/PUBLISH_TO_XAC.md**.
 - **Runbooks:** Live in **monitoring/runbooks/** (HIGH_ERROR_RATE, HIGH_LATENCY, DEPLOYMENT_FAILED, COST_SPIKE, INSTANCE_ANOMALY). Linked from alert policies when `runbook_base_url` is set (e.g. GitHub URL to this path).
 - **Policies:** OPA Rego in **iac/policies/** (require-labels, cloud-run-health-check, no-plain-env-secrets). Used by **iac/workflows/reusable-terraform.yml** when running Terraform from a project path (e.g. `_XAC_Config_ContractorScope_/iac`).
 - **Workflows:** **iac/workflows/reusable-terraform.yml** is the standard for Terraform + OPA. Call it with `project-path` pointing to your project’s Terraform dir.
+
+
+## Versioning
+
+- **VERSION** and **CHANGELOG.md** in this folder. Sync updates only \_XAC/\; consumer config (\_XAC_Config_*\) is never rebuilt by sync.
+- To pin to a release: run Sync _XAC with \xac_ref=v1.0.0\ (or another tag). See **docs/VERSIONING_AND_CONFIG_UPDATE.md** for config adoption and breaking changes.
+
