@@ -1,0 +1,25 @@
+# Pre-flight checks — fast block before rest of pipeline.
+# Pinned: actions/checkout@v4.2.2 = 11bd71901bbe5b1630ceea73d27597364c9af683
+on:
+  workflow_call:
+    inputs:
+      python-version:
+        type: string
+        default: "3.11"
+
+jobs:
+  branch-protection:
+    name: Branch and commit checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+      - name: Validate secrets baseline exists
+        run: |
+          if [ ! -f .secrets.baseline ]; then
+            echo "::warning::.secrets.baseline not found (optional)."
+          fi
+      - name: Check requirements.txt present
+        run: test -f requirements.txt || (echo "::error::requirements.txt not found" && exit 1)

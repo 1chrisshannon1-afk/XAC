@@ -1,0 +1,30 @@
+# Smoke tests against the 0% revision URL.
+on:
+  workflow_call:
+    inputs:
+      revision-url:
+        type: string
+        required: true
+      health-endpoint:
+        type: string
+        default: "/health"
+
+jobs:
+  smoke-tests:
+    name: Smoke tests (live revision)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Wait for revision
+        run: |
+          for i in $(seq 1 30); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${{ inputs.revision-url }}${{ inputs.health-endpoint }}" --max-time 10 || echo "000")
+            [ "$STATUS" = "200" ] && echo "Revision ready" && break
+            [ $i -eq 30 ] && echo "::error::Revision not ready" && exit 1
+            sleep 3
+          done
+      - name: Health check
+        run: |
+          HTTP=$(curl -s -o /dev/null -w "%{http_code}" "${{ inputs.revision-url }}${{ inputs.health-endpoint }}")
+          [ "$HTTP" = "200" ] || (echo "::error::Health failed HTTP $HTTP" && exit 1)

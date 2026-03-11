@@ -1,0 +1,59 @@
+# Rollback: shift traffic to previous revision and notify failure.
+on:
+  workflow_call:
+    inputs:
+      project-id:
+        type: string
+        required: true
+      region:
+        type: string
+        default: us-central1
+      service-name:
+        type: string
+        required: true
+      failed-revision:
+        type: string
+        required: true
+      reason:
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  rollback:
+    name: "Auto-rollback — ${{ inputs.reason }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.WIF_SERVICE_ACCOUNT }}
+      - name: Find previous revision
+        id: previous
+        run: |
+          PREV=$(gcloud run revisions list \
+            --service=${{ inputs.service-name }} \
+            --region=${{ inputs.region }} \
+            --project=${{ inputs.project-id }} \
+            --format="value(metadata.name)" \
+            --filter="metadata.name!=${{ inputs.failed-revision }}" \
+            --limit=2 \
+            --sort-by="~metadata.creationTimestamp" | tail -1)
+          echo "previous-revision=$PREV" >> $GITHUB_OUTPUT
+      - name: Shift 100% to previous revision
+        run: |
+          gcloud run services update-traffic ${{ inputs.service-name }} \
+            --region=${{ inputs.region }} \
+            --project=${{ inputs.project-id }} \
+            --to-revisions=${{ steps.previous.outputs.previous-revision }}=100
+      - name: Record rollback in summary
+        run: |
+          echo "## Auto-rollback" >> $GITHUB_STEP_SUMMARY
+          echo "Reason: ${{ inputs.reason }}" >> $GITHUB_STEP_SUMMARY
+          echo "Rolled back to: ${{ steps.previous.outputs.previous-revision }}"

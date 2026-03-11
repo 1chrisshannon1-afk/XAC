@@ -22,6 +22,9 @@ Use those files as the source of truth for variable names, step order, and how t
 | Path | Purpose |
 |------|--------|
 | `local_ci/core.ps1` | Shared CI engine. Do not run directly; invoked by each project’s `local_ci.ps1` after loading its `.ci/config.ps1`. |
+| `.github/workflows/*.yml` | Reusable workflows: preflight, build-push, deploy-canary, smoke-tests, playwright (fixed 3 shards), traffic-shift (15–30 min bake, HTTP health check), rollback. |
+| `scripts/canary-health-check.sh` | HTTP-based canary health check (bake period, max failures threshold). |
+| `briefs/` | Agent briefs for staging and production (pipeline design, fixes: bake time, Playwright shards, migrations, notifications). |
 
 ## How a consuming project uses this
 
