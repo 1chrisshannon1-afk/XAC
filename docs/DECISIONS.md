@@ -98,4 +98,4 @@ Why key choices were made. Each entry is an ADR.
 
 ## How to apply this in your project
 
-When you make a significant architectural choice affecting IAC or consuming projects, add an ADR here with context, decision, reason, and consequences. Bump the "Last reviewed" date when touching this file.
+When you make a significant architectural choice affecting XAC or consuming projects, add an ADR here with context, decision, reason, and consequences. Bump the "Last reviewed" date when touching this file.

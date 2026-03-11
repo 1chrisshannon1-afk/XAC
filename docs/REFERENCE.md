@@ -57,7 +57,7 @@ Keeping flags in config and passing them through keeps local and origin CI in sy
 
 ## Reusable workflow inputs/outputs (reference)
 
-When using IAC’ GitHub Actions:
+When using XAC’ GitHub Actions:
 
 - **reusable-preflight.yml:** inputs: `python-version`. No outputs.
 - **reusable-static-checks.yml:** inputs: `python-version`, `compileall-targets`, `ruff-excludes`, `mypy-target`, `mypy-config`. No outputs.

@@ -1,5 +1,5 @@
-# .ci/config.ps1 — Project-specific CI config. Copy from IAC ci/templates/config.ps1 and adapt.
-# All $CI_* variables are consumed by IAC ci/local_ci/core.ps1. Keep unit/integration flags in sync with deploy-staging.yml.
+# .ci/config.ps1 — Project-specific CI config. Copy from XAC ci/templates/config.ps1 and adapt.
+# All $CI_* variables are consumed by XAC ci/local_ci/core.ps1. Keep unit/integration flags in sync with deploy-staging.yml.
 
 $ROOT = $PSScriptRoot
 if (-not $ROOT) { $ROOT = (Get-Location).Path }

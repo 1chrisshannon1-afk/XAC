@@ -1,0 +1,55 @@
+# Agent Rules — XAC Base
+# This is the shared base for all XAC-consuming projects.
+# Layer project-specific rules from _XAC_Config_<ProjectName>/cursor/cursorrules.project.
+
+## 1. Execution
+
+- **Environment:** Windows + PowerShell.
+- **Flow:** One copy-paste command block per turn. No multitasking.
+- **Editing:** Patch-based edits only. No whole-file overwrites. Use diff/patch or small targeted scripts.
+- **Fail-fast:** If a command fails, stop. Provide one diagnostic/fix command. Do not continue on red.
+
+## 2. Git Discipline
+
+**Commits -> GitHub. Pushes -> GCP.**
+
+- **Commits:** Only when the user explicitly asks to commit (e.g. "commit all", "commit to GitHub", "commit these changes").
+- **Pushes:** Only when the user explicitly asks to push or deploy (e.g. "push to origin", "push staging", "deploy staging", "merge with staging and deploy"). Pushing triggers deployment to GCP.
+- **Other git commands** (`git status`, `git diff`, `git pull`, `git merge`, etc.): only when the user explicitly requests git operations or as part of an approved commit/push/deploy workflow.
+- **Deploy workflow:** When the user says "merge with staging and deploy" (or equivalent), follow `.cursor/rules/merge_staging_and_deploy.md`.
+
+## 3. Post-Task Workflow — After Any Code Change
+
+1. `ruff check --fix .` and `ruff format .`
+2. Create/update tests per `repo_docs/testing/ENTERPRISE_TESTING_STANDARD.md`
+3. Run tests: `pytest modules/<name>/tests/` or `pytest integration_tests/<subpath>` (with servers if needed)
+4. `python -m compileall` (relevant paths)
+5. **Before push:** run `.\local_ci.ps1`
+6. Report completion. **Do not commit unless the user asks to commit; do not push or deploy unless the user asks to push/deploy.**
+
+## 4. Testing
+
+- **Module tests:** `modules/<name>/tests/`
+- **Cross-module / E2E:** `integration_tests/`
+- **What to mock:** Only external boundaries (Firestore, GCS, third-party APIs). Do not mock our own services/controllers.
+- **Run:** `pytest modules/<name>/tests/` or `pytest integration_tests/` from repo root with correct `PYTHONPATH`.
+- **Server tests:** Use `.\repo_tooling\restart_servers.ps1` — Start: `-StartOnly`, Stop: `-StopOnly`, Restart: no args.
+
+## 5. GCP Project Lock
+
+All GCP operations use the project defined in `.cursor/rules/project_lock.mdc`. Never deploy, build, or configure resources in any other project.
+
+## 6. Test-Running Agents — Report Only, Do Not Fix
+
+- Run tests and collect failures.
+- Add tasks to `.cursor/PROJECT_TASKS.md` with status `pending`, error details, test names.
+- **Never** fix errors automatically unless the user explicitly says "fix this" or "resolve this".
+
+## 7. Do Not
+
+- Rename/move many files for "cleanliness"
+- Introduce new frameworks without explicit request
+- Change output schemas silently
+- Bypass smoke/regression
+- Propose manual edits (all edits via command line)
+- Overwrite whole files for small changes

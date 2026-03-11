@@ -1,20 +1,20 @@
-# Onboarding — Adding a New Project to IAC
+# Onboarding — Adding a New Project to XAC
 
 **Last reviewed:** 2026-03-11
 
-Step-by-step guide for adding a new project so it uses IAC (shared CI/IaC/monitoring) for local CI and (when wired) deploy pipelines.
+Step-by-step guide for adding a new project so it uses XAC (shared CI/IaC/monitoring) for local CI and (when wired) deploy pipelines.
 
 ---
 
-## 1. Clone IAC
+## 1. Clone XAC
 
-Clone IAC as a sibling to your project repo:
+Clone XAC as a sibling to your project repo:
 
 ```bash
-git clone https://github.com/1chrisshannon1-afk/IAC.git
+git clone https://github.com/1chrisshannon1-afk/XAC.git
 ```
 
-(Or use the path your org uses for the shared repo. The project’s `local_ci.ps1` will expect it at a sibling directory named `IAC` unless overridden.)
+(Or use the path your org uses for the shared repo. The project’s `local_ci.ps1` will expect it at a sibling directory named `XAC` unless overridden.)
 
 ---
 
@@ -60,7 +60,7 @@ Implement `/health` and `/health/ready` per `docs/HEALTH_CHECK_CONTRACT.md` so s
 From your project root:
 
 ```powershell
-.\IAC\ci\scripts\verify-setup.ps1
+.\XAC\ci\scripts\verify-setup.ps1
 ```
 
 (If you use _XAC in-repo: `.\_XAC\ci\scripts\verify-setup.ps1`.)
@@ -75,7 +75,7 @@ Fix any reported failures (Docker, Python, Node, `gh`, `.ci/config.ps1`, `docker
 .\local_ci.ps1
 ```
 
-Local CI should bootstrap IAC automatically (clone if missing, warn if stale) when not using _XAC in-repo, and run the full pipeline.
+Local CI should bootstrap XAC automatically (clone if missing, warn if stale) when not using _XAC in-repo, and run the full pipeline.
 
 ---
 

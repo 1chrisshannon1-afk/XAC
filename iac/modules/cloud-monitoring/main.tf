@@ -4,7 +4,7 @@ locals {
     company     = var.company
     environment = var.environment
     managed_by  = "terraform"
-    repo        = "IAC"
+    repo        = "XAC"
   }
   runbook_base = var.runbook_base_url
   service_filter = "resource.type=\"cloud_run_revision\" resource.labels.service_name=\"${var.service_name}\""

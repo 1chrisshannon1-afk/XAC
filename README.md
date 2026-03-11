@@ -23,7 +23,7 @@ Cross-project XAC (CI, IaC, monitoring, docs). Shared content used by all projec
 
 1. **Option A — _XAC in repo:** Ensure `_XAC` is at repo root (this folder). Project `local_ci.ps1` loads `.ci/config.ps1` and bootstraps; bootstrap sets `$CI_SHARED_PATH` to `_XAC/ci` so `local_ci\core.ps1` is found.
 
-2. **Option B — Sibling IAC:** Clone [IAC](https://github.com/1chrisshannon1-afk/IAC) as a sibling; point `$CI_SHARED_PATH` at that clone (or use `.ci/bootstrap-helper.ps1`).
+2. **Option B — Sibling XAC:** Clone [XAC](https://github.com/1chrisshannon1-afk/XAC) as a sibling; point `$CI_SHARED_PATH` at that clone (or use `.ci/bootstrap-helper.ps1`).
 
 3. **Terraform:** Project IaC (e.g. `_XAC_Config_ContractorScope_/iac`) uses `source = "../../_XAC/iac/modules/project-baseline"`. Run `terraform init` and `terraform plan` from the project iac dir.
 
@@ -32,7 +32,7 @@ Cross-project XAC (CI, IaC, monitoring, docs). Shared content used by all projec
 ## Reference
 
 See **docs/REFERENCE.md** for all `$CI_*` variables and **docs/IaC_ONBOARDING.md** for provisioning a new project.  
-To publish _XAC to the IAC GitHub repo, see **docs/PUBLISH_TO_IAC.md**.
+To publish _XAC to the XAC GitHub repo, see **docs/PUBLISH_TO_XAC.md**.
 
 ## Full onboarding (monitoring, runbooks, policies, workflows)
 

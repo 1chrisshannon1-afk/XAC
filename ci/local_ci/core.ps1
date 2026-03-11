@@ -1,12 +1,6 @@
-<#
-.SYNOPSIS
-    Shared CI core engine. Called by each project's local_ci.ps1 after loading its .ci/config.ps1.
-    Do not run this directly — use your project's local_ci.ps1 wrapper.
-.DESCRIPTION
-    All project-specific values come from variables set in .ci/config.ps1 before this script is dot-sourced.
-    Steps 1-4: sequential (containers, Python deps, static checks, parallel unit tests).
-    Step 5: parallel — integration batches + Playwright + Node/frontend jobs.
-#>
+# Shared CI core engine. Called by each project's local_ci.ps1 after loading .ci/config.ps1. Do not run directly.
+# Steps 1-4: containers, Python deps, static checks, parallel unit tests.
+# Step 5: nine batches 5a-5d integration, 5e Playwright, 5f-5i Node/frontend, each with its own timeout.
 
 $ErrorActionPreference = "Continue"
 if (-not $ROOT) { $ROOT = $PWD.Path }
@@ -56,7 +50,7 @@ $env:PYTHONPATH = $pyPaths -join [System.IO.Path]::PathSeparator
 if ($CI_CATALOG_DIR) { $env:CATALOG_DIR = $CI_CATALOG_DIR }
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
-function Ensure-Emulators {
+function Invoke-EmulatorCheck {
     param([string]$Context = "")
     $prefix = if ($Context) { "[$Context] " } else { "" }
     $healthy = $true
@@ -166,7 +160,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # ── [4/5] Unit tests (parallel sets) ──────────────────────────────────────────
-Ensure-Emulators -Context "4"
+Invoke-EmulatorCheck -Context "4"
 Write-Host "[4/5] Unit tests ($($CI_UNIT_TEST_SETS.Count) parallel sets)..." -ForegroundColor Yellow
 
 $unitJobs = @()
@@ -220,20 +214,13 @@ if ($unitFailed -ne 0) {
     exit 1
 }
 
-# ── [5/5] Integration + Playwright + Node/Frontend jobs (all parallel) ─────────
-Ensure-Emulators -Context "5"
-$jobCount = $CI_INTEGRATION_BATCHES.Count +
-            $(if ($CI_PLAYWRIGHT_DIR) { 1 } else { 0 }) +
-            $CI_NODE_JOBS.Count
-Write-Host "[5/5] $jobCount parallel jobs (integration x$($CI_INTEGRATION_BATCHES.Count), $(if ($CI_PLAYWRIGHT_DIR) { 'Playwright, ' })Node x$($CI_NODE_JOBS.Count))..." -ForegroundColor Yellow
-
-# Integration batch jobs
-$integrationJobs = @(); $integrationExitFiles = @()
-foreach ($batch in $CI_INTEGRATION_BATCHES) {
-    $exitFile = Join-Path $logDir "integration_$($batch.Name -replace '\s','_').exit"
+# ── [5/9] Phase 2 — integration, Playwright, Node (batches 5a–5i) ───────────────
+# Helper: run one integration batch, return 0 on success else 1
+function Invoke-SingleIntegrationBatch {
+    param([hashtable]$Batch, [int]$TimeoutSeconds)
+    $exitFile = Join-Path $logDir "integration_$($Batch.Name -replace '\s','_').exit"
     if (Test-Path $exitFile) { Remove-Item $exitFile -Force }
-    $integrationExitFiles += $exitFile
-    $integrationJobs += Start-Job -ScriptBlock {
+    $j = Start-Job -ScriptBlock {
         param($Root, $Py, $ExitFile, $PathsStr, $FlagsStr, $EnvMap)
         Set-Location $Root
         foreach ($k in $EnvMap.Keys) { [System.Environment]::SetEnvironmentVariable($k, $EnvMap[$k]) }
@@ -244,7 +231,7 @@ foreach ($batch in $CI_INTEGRATION_BATCHES) {
         $code = $LASTEXITCODE
         try { [System.IO.File]::WriteAllText($ExitFile, $code) } catch {}
         exit $code
-    } -ArgumentList $ROOT, $PY, $exitFile, $batch.Paths, $CI_INTEGRATION_PYTEST_FLAGS, @{
+    } -ArgumentList $ROOT, $PY, $exitFile, $Batch.Paths, $CI_INTEGRATION_PYTEST_FLAGS, @{
         PYTHONPATH               = $env:PYTHONPATH
         CATALOG_DIR              = $env:CATALOG_DIR
         DEV_MODE                 = "true"
@@ -256,31 +243,26 @@ foreach ($batch in $CI_INTEGRATION_BATCHES) {
         STORAGE_EMULATOR_HOST    = $CI_STORAGE_HOST
         REDIS_URL                = $CI_REDIS_URL
     }
+    Wait-Job -Job $j -Timeout $TimeoutSeconds | Out-Null
+    $ec = 1
+    if ($j.State -eq "Completed" -and (Test-Path $exitFile)) { $ec = [int](Get-Content $exitFile -Raw) }
+    elseif ($j.State -ne "Completed") {
+        Write-Host "  [$($Batch.Name)] TIMEOUT or RUNNING" -ForegroundColor Red
+        Stop-Job -Job $j -ErrorAction SilentlyContinue
+    }
+    $status = if ($ec -eq 0) { "PASS" } else { "FAIL" }
+    $color  = if ($ec -eq 0) { "Green" } else { "Red" }
+    Write-Host "  [$($Batch.Name)] $status" -ForegroundColor $color
+    Remove-Job -Job $j -Force -ErrorAction SilentlyContinue
+    return $ec
 }
 
-# Playwright job
-$playwrightJob = $null; $playwrightExitFile = $null
-if ($CI_PLAYWRIGHT_DIR) {
-    $playwrightExitFile = Join-Path $logDir "playwright.exit"
-    if (Test-Path $playwrightExitFile) { Remove-Item $playwrightExitFile -Force }
-    $playwrightJob = Start-Job -ScriptBlock {
-        param($Dir, $ExitFile)
-        Set-Location $Dir
-        npx playwright install --with-deps chromium 2>$null
-        npx playwright test --project=chromium 2>&1
-        $code = $LASTEXITCODE
-        try { [System.IO.File]::WriteAllText($ExitFile, $code) } catch {}
-        exit $code
-    } -ArgumentList $CI_PLAYWRIGHT_DIR, $playwrightExitFile
-}
-
-# Node/frontend jobs
-$nodeJobs = @(); $nodeExitFiles = @()
-foreach ($job in $CI_NODE_JOBS) {
-    $exitFile = Join-Path $logDir "node_$($job.Name -replace '\s','_').exit"
+# Helper: run one Node/frontend job, return 0 on success else 1
+function Invoke-SingleNodeJob {
+    param([hashtable]$Job, [int]$TimeoutSeconds)
+    $exitFile = Join-Path $logDir "node_$($Job.Name -replace '\s','_').exit"
     if (Test-Path $exitFile) { Remove-Item $exitFile -Force }
-    $nodeExitFiles += $exitFile
-    $nodeJobs += Start-Job -ScriptBlock {
+    $j = Start-Job -ScriptBlock {
         param($Root, $JobDir, $Steps, $ExitFile)
         Set-Location (Join-Path $Root $JobDir)
         $code = 0
@@ -293,74 +275,92 @@ foreach ($job in $CI_NODE_JOBS) {
         if ($code -eq 0 -and $Steps -contains "test:cov") { npm test -- --run --coverage 2>&1 | Out-Null; if ($LASTEXITCODE -ne 0) { $code = 1 } }
         try { [System.IO.File]::WriteAllText($ExitFile, $code) } catch {}
         exit $code
-    } -ArgumentList $ROOT, $job.Dir, $job.Steps, $exitFile
-}
-
-$allJobs = $integrationJobs + @($nodeJobs)
-if ($playwrightJob) { $allJobs += $playwrightJob }
-Wait-Job -Job $allJobs -Timeout 3600 | Out-Null
-
-# Collect integration results
-$integrationFailed = 0
-for ($i = 0; $i -lt $integrationJobs.Count; $i++) {
-    $j = $integrationJobs[$i]; $batch = $CI_INTEGRATION_BATCHES[$i]
+    } -ArgumentList $ROOT, $Job.Dir, $Job.Steps, $exitFile
+    Wait-Job -Job $j -Timeout $TimeoutSeconds | Out-Null
     $ec = 1
-    if ($j.State -eq "Completed" -and (Test-Path $integrationExitFiles[$i])) {
-        $ec = [int](Get-Content $integrationExitFiles[$i] -Raw)
+    if ($j.State -eq "Completed" -and (Test-Path $exitFile)) { $ec = [int](Get-Content $exitFile -Raw) }
+    elseif ($j.State -ne "Completed") {
+        Write-Host "  [$($Job.Name)] TIMEOUT or RUNNING" -ForegroundColor Red
+        Stop-Job -Job $j -ErrorAction SilentlyContinue
     }
     $status = if ($ec -eq 0) { "PASS" } else { "FAIL" }
     $color  = if ($ec -eq 0) { "Green" } else { "Red" }
-    Write-Host "  [$($batch.Name)] $status" -ForegroundColor $color
-    if ($ec -ne 0) { $integrationFailed = 1 }
+    Write-Host "  [$($Job.Name)] $status" -ForegroundColor $color
     Remove-Job -Job $j -Force -ErrorAction SilentlyContinue
+    return $ec
 }
 
-# Collect Playwright result
-$playwrightFailed = 0
-if ($playwrightJob) {
-    $ec = 1
-    if ($playwrightJob.State -eq "Completed" -and (Test-Path $playwrightExitFile)) {
-        $ec = [int](Get-Content $playwrightExitFile -Raw)
+$integrationBatchTimeout = 600   # 10 min per integration batch
+$nodeJobTimeout = 600            # 10 min per Node job (frontend tests can be slow)
+$playwrightTimeout = 1200        # 20 min for Playwright
+
+$phaseLabels = @("5a", "5b", "5c", "5d")
+# 5a–5d – Integration batches (one per batch in config)
+for ($i = 0; $i -lt $CI_INTEGRATION_BATCHES.Count; $i++) {
+    $batch = $CI_INTEGRATION_BATCHES[$i]
+    $label = if ($i -lt $phaseLabels.Count) { $phaseLabels[$i] } else { "5$([char](97 + $i))" }
+    Invoke-EmulatorCheck -Context $label
+    Write-Host "[$label/9] Integration: $($batch.Name) (timeout 10 min)..." -ForegroundColor Yellow
+    if (Invoke-SingleIntegrationBatch $batch $integrationBatchTimeout) {
+        "Local CI: integration ($label) failed." | Set-Content (Join-Path $logDir "LATEST_FAILURE.md") -Encoding UTF8
+        docker compose -f $CI_COMPOSE_FILE down 2>$null; exit 1
     }
-    $status = if ($ec -eq 0) { "PASS" } else { "FAIL" }
-    $color  = if ($ec -eq 0) { "Green" } else { "Red" }
+}
+
+# 5e – Playwright
+if ($CI_PLAYWRIGHT_DIR) {
+    Invoke-EmulatorCheck -Context "5e"
+    Write-Host "[5e/9] Playwright (chromium), timeout 20 min..." -ForegroundColor Yellow
+    $playwrightExitFile = Join-Path $logDir "playwright.exit"
+    if (Test-Path $playwrightExitFile) { Remove-Item $playwrightExitFile -Force }
+    $playwrightJob = Start-Job -ScriptBlock {
+        param($Dir, $ExitFile)
+        Set-Location $Dir
+        npx playwright install --with-deps chromium 2>$null
+        npx playwright test --project=chromium 2>&1
+        $code = $LASTEXITCODE
+        try { [System.IO.File]::WriteAllText($ExitFile, $code) } catch {}
+        exit $code
+    } -ArgumentList $CI_PLAYWRIGHT_DIR, $playwrightExitFile
+    Wait-Job -Job $playwrightJob -Timeout $playwrightTimeout | Out-Null
+    $ec = 1
+    if ($playwrightJob.State -eq "Completed" -and (Test-Path $playwrightExitFile)) { $ec = [int](Get-Content $playwrightExitFile -Raw) }
+    elseif ($playwrightJob.State -ne "Completed") { Write-Host "  [Playwright] TIMEOUT or RUNNING" -ForegroundColor Red }
+    $status = if ($ec -eq 0) { "PASS" } else { "FAIL" }; $color = if ($ec -eq 0) { "Green" } else { "Red" }
     Write-Host "  [Playwright] $status" -ForegroundColor $color
-    if ($ec -ne 0) { $playwrightFailed = 1 }
     Remove-Job -Job $playwrightJob -Force -ErrorAction SilentlyContinue
+    if ($ec -ne 0) {
+        "Local CI: Playwright (5e) failed." | Set-Content (Join-Path $logDir "LATEST_FAILURE.md") -Encoding UTF8
+        docker compose -f $CI_COMPOSE_FILE down 2>$null; exit 1
+    }
 }
 
-# Collect Node/frontend results
-$nodeFailed = 0
-for ($i = 0; $i -lt $nodeJobs.Count; $i++) {
-    $j = $nodeJobs[$i]; $job = $CI_NODE_JOBS[$i]
-    $ec = 1
-    if ($j.State -eq "Completed" -and (Test-Path $nodeExitFiles[$i])) {
-        $ec = [int](Get-Content $nodeExitFiles[$i] -Raw)
+# 5f – Node lint/format
+Write-Host "[5f/9] Node: lint/format (timeout 10 min)..." -ForegroundColor Yellow
+if (Invoke-SingleNodeJob $CI_NODE_JOBS[0] $nodeJobTimeout) {
+    "Local CI: Node lint/format (5f) failed." | Set-Content (Join-Path $logDir "LATEST_FAILURE.md") -Encoding UTF8
+    docker compose -f $CI_COMPOSE_FILE down 2>$null; exit 1
+}
+
+# 5g–5i – Remaining Node/frontend jobs (one per job in config)
+$nodeStepNames = @("5g", "5h", "5i")
+for ($idx = 1; $idx -lt $CI_NODE_JOBS.Count; $idx++) {
+    $stepLabel = if ($idx -le $nodeStepNames.Count) { $nodeStepNames[$idx - 1] } else { "5$([char](96 + $idx + 4))" }
+    Write-Host "[$stepLabel/9] Node: $($CI_NODE_JOBS[$idx].Name) (timeout 10 min)..." -ForegroundColor Yellow
+    if (Invoke-SingleNodeJob $CI_NODE_JOBS[$idx] $nodeJobTimeout) {
+        "Local CI: Node $($CI_NODE_JOBS[$idx].Name) ($stepLabel) failed." | Set-Content (Join-Path $logDir "LATEST_FAILURE.md") -Encoding UTF8
+        docker compose -f $CI_COMPOSE_FILE down 2>$null; exit 1
     }
-    $status = if ($ec -eq 0) { "PASS" } else { "FAIL" }
-    $color  = if ($ec -eq 0) { "Green" } else { "Red" }
-    Write-Host "  [$($job.Name)] $status" -ForegroundColor $color
-    if ($ec -ne 0) { $nodeFailed = 1 }
-    Remove-Job -Job $j -Force -ErrorAction SilentlyContinue
 }
 
 # Container health check after all jobs
-if (-not (Test-EmulatorsHealthy -LogDir $logDir)) {
+$emulatorsOk = Test-EmulatorsHealthy -LogDir $logDir
+if (-not $emulatorsOk) {
     Write-Host "Containers became unavailable during CI." -ForegroundColor Red
-    Get-Content (Join-Path $logDir "CONTAINER_FAILURE.txt") -ErrorAction SilentlyContinue |
-        ForEach-Object { Write-Host "  $_" -ForegroundColor Red }
-}
-
-if ($integrationFailed -ne 0 -or $playwrightFailed -ne 0 -or $nodeFailed -ne 0) {
-    @(
-        "Local CI failed - $CI_PROJECT_NAME",
-        "Integration:  $(if ($integrationFailed) { 'FAIL' } else { 'PASS' })",
-        "Playwright:   $(if ($playwrightFailed)  { 'FAIL' } else { 'PASS' })",
-        "Node/frontend: $(if ($nodeFailed)       { 'FAIL' } else { 'PASS' })",
-        "",
-        "See ci_logs/ for per-job exit files."
-    ) | Set-Content (Join-Path $logDir "LATEST_FAILURE.md") -Encoding UTF8
-    exit 1
+    $reportPath = Join-Path $logDir "CONTAINER_FAILURE.txt"
+    if (Test-Path $reportPath) {
+        Get-Content $reportPath -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ -ForegroundColor Red }
+    }
 }
 
 # ── Cleanup ───────────────────────────────────────────────────────────────────

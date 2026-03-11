@@ -1,10 +1,10 @@
 <#
 .SYNOPSIS
-    Bootstrap _XAC or IAC: ensure path exists, warn if stale. Sets $CI_SHARED_PATH in caller scope.
+    Bootstrap _XAC or XAC: ensure path exists, warn if stale. Sets $CI_SHARED_PATH in caller scope.
 .DESCRIPTION
-    Called by each project's local_ci.ps1. Prefers _XAC in project root; else sibling IAC (or SharedWorkflows).
-    Clones IAC if missing; warns if last commit is older than 7 days. Does not block on staleness.
-    IAC repo mirrors _XAC (ci/, iac/, monitoring/, docs/). CI_SHARED_PATH is set to .../ci when that layout exists.
+    Called by each project's local_ci.ps1. Prefers _XAC in project root; else sibling XAC.
+    Clones XAC if missing; warns if last commit is older than 7 days. Does not block on staleness.
+    XAC repo mirrors _XAC (ci/, iac/, monitoring/, docs/). CI_SHARED_PATH is set to .../ci when that layout exists.
 #>
 
 $ErrorActionPreference = "Stop"
@@ -12,22 +12,21 @@ $ErrorActionPreference = "Stop"
 if (-not $ROOT) { $ROOT = $PWD.Path }
 $XacPath = Join-Path $ROOT "_XAC"
 $ParentDir = Split-Path $ROOT -Parent
-$IacPath = Join-Path $ParentDir "IAC"
-$LegacyPath = Join-Path $ParentDir "SharedWorkflows"
-$SharedPath = if (Test-Path $XacPath) { $XacPath } elseif (Test-Path $IacPath) { $IacPath } else { $LegacyPath }
+$XacClonePath = Join-Path $ParentDir "XAC"
+$SharedPath = if (Test-Path $XacPath) { $XacPath } elseif (Test-Path $XacClonePath) { $XacClonePath } else { $null }
 
 if (-not (Test-Path $SharedPath)) {
     if ($SharedPath -eq $XacPath) {
-        Write-Host "_XAC not found at $XacPath. Create _XAC or clone IAC as sibling." -ForegroundColor Red
+        Write-Host "_XAC not found at $XacPath. Create _XAC or clone XAC as sibling." -ForegroundColor Red
         exit 1
     }
-    Write-Host "IAC not found - cloning..." -ForegroundColor Yellow
-    $cloneTarget = $IacPath
+    Write-Host "XAC not found - cloning..." -ForegroundColor Yellow
+    $cloneTarget = $XacClonePath
     if (-not (Test-Path $ParentDir)) { New-Item -ItemType Directory -Path $ParentDir -Force | Out-Null }
     try {
-        git clone https://github.com/1chrisshannon1-afk/IAC.git $cloneTarget
+        git clone https://github.com/1chrisshannon1-afk/XAC.git $cloneTarget
         if ($LASTEXITCODE -ne 0) {
-            Write-Host "Clone failed. Run manually: git clone https://github.com/1chrisshannon1-afk/IAC.git $cloneTarget" -ForegroundColor Red
+            Write-Host "Clone failed. Run manually: git clone https://github.com/1chrisshannon1-afk/XAC.git $cloneTarget" -ForegroundColor Red
             exit 1
         }
         $SharedPath = $cloneTarget

@@ -4,7 +4,7 @@ locals {
     company     = var.company
     environment = var.environment
     managed_by  = "terraform"
-    repo        = "IAC"
+    repo        = "XAC"
   }
 
   secret_env = [

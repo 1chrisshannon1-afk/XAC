@@ -27,7 +27,7 @@ jobs:
   build:
     # ... (same pattern as deploy-staging: preflight, scans, static-checks, tests, then build)
     # Omitted for brevity; copy from deploy-staging template and add deploy-production job below.
-    uses: 1chrisshannon1-afk/IAC/.github/workflows/reusable-build-push.yml@main
+    uses: 1chrisshannon1-afk/XAC/.github/workflows/reusable-build-push.yml@main
     with:
       project-id: <PROJECT_ID>
       repo-name: <ARTIFACT_REGISTRY_REPO>
@@ -36,7 +36,7 @@ jobs:
 
   deploy:
     needs: build
-    uses: 1chrisshannon1-afk/IAC/.github/workflows/reusable-deploy-production.yml@main
+    uses: 1chrisshannon1-afk/XAC/.github/workflows/reusable-deploy-production.yml@main
     with:
       project-id: <PROJECT_ID>
       service-name: <CLOUD_RUN_SERVICE>

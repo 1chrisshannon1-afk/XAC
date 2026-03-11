@@ -69,6 +69,6 @@ variable "min_instances" {
 
 variable "runbook_base_url" {
   type    = string
-  default = "https://github.com/1chrisshannon1-afk/IAC/blob/main/monitoring/runbooks"
+  default = "https://github.com/1chrisshannon1-afk/XAC/blob/main/monitoring/runbooks"
   description = "Base URL for runbook links in alert notifications"
 }

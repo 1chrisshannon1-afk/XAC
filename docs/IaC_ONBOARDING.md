@@ -87,7 +87,7 @@ Step-by-step guide to provision a new GCP project using _XAC Terraform modules. 
    ```
 
 10. **Copy and adapt workflows**  
-    Copy `.github/workflows` templates from IAC (e.g. deploy-staging, deploy-production) into the application repo and replace placeholders with the new project’s values.
+    Copy `.github/workflows` templates from XAC (e.g. deploy-staging, deploy-production) into the application repo and replace placeholders with the new project’s values.
 
 11. **Verify setup**  
     Run `_XAC/ci/scripts/verify-setup.ps1` (or the project’s equivalent) to confirm Docker, Python, Node, gh, and repo config are correct.

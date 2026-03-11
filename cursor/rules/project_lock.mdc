@@ -1,0 +1,26 @@
+---
+description: "Lock all GCP/gcloud operations to {{PROJECT_DISPLAY_NAME}} project"
+alwaysApply: true
+---
+
+# Project Lock — {{PROJECT_DISPLAY_NAME}}
+
+**The ONLY GCP project for this repo is `{{PROJECT_ID}}`.**
+
+- **Project ID:** {{PROJECT_ID}}
+- **Display name:** {{PROJECT_DISPLAY_NAME}}
+- **Live app URL:** {{APP_URL}}
+
+## Rules
+
+1. **Never run gcloud, Cloud Build, Cloud Run, or any GCP CLI without `--project={{PROJECT_ID}}`** (or equivalent: `gcloud config set project {{PROJECT_ID}}` before commands).
+2. **Never reference or deploy to any other GCP project.** All Cloud Run services, Cloud Tasks, Firestore, GCS, etc. must be in `{{PROJECT_ID}}`.
+3. **Verify project before deploy/build:** If a script or command does not explicitly set the project, add `--project={{PROJECT_ID}}` or ensure the script sets `gcloud config set project {{PROJECT_ID}}` at the start.
+4. **Service accounts, keys, and credentials** must belong to `{{PROJECT_ID}}`.
+
+## Quick check
+
+```
+gcloud config get-value project
+# Must output: {{PROJECT_ID}}
+```

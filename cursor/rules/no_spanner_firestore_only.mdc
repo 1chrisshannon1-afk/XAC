@@ -1,0 +1,23 @@
+---
+description: "No Cloud Spanner — use Firestore only for database"
+alwaysApply: true
+---
+
+# No Spanner — Firestore Only
+
+**Permanent rule.** All agents and contributors must follow this.
+
+## Do not use Cloud Spanner
+
+- **Do NOT** add Cloud Spanner to this project. Do not enable the Spanner API, create Spanner instances, or add `google-cloud-spanner` (or any Spanner client) as a dependency.
+- **Do NOT** introduce `USE_SPANNER`, `SPANNER_INSTANCE`, or `SPANNER_DATABASE` env vars or config. Do not document or recommend Spanner as an option.
+- **Do NOT** re-add Spanner migration runbooks, Spanner DDL, or Spanner repositories. Legacy Spanner code has been removed; do not restore it.
+
+## Use Firestore only for database
+
+- **Primary database:** Firestore (and GCS for blobs, Secret Manager for secrets).
+- **Catalog:** Developer catalog versions and company overrides are in Firestore.
+
+## Why this rule exists
+
+Spanner was removed to eliminate a large, recurring GCP cost (~$450+/month) while the app already runs on Firestore. Re-adding Spanner would reintroduce cost and confusion.

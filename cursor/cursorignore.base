@@ -1,0 +1,49 @@
+# XAC Base .cursorignore
+# Shared patterns for all XAC-consuming projects.
+# Layer project-specific patterns from _XAC_Config_<ProjectName>/cursor/cursorignore.project.
+
+# Virtual envs and deps
+venv/
+env/
+**/node_modules/
+
+# Build and dist
+dist/
+**/dist/
+*.egg-info/
+__pycache__/
+**/__pycache__/
+
+# Coverage and test artifacts
+htmlcov/
+htmlcov_*/
+.coverage
+.coverage.*
+coverage*.json
+.pytest_cache/
+integration_tests/reports/
+**/tests/batch_reports/
+modules/*/reports/
+
+# CI output
+ci_logs/
+
+# Logs and runtime
+*.log
+logs/
+.cursor/server_logs/
+
+# Credentials (never index)
+**/local-dev-key.json
+**/*service-account*.json
+**/application_default_credentials.json
+.env
+.env.*
+**/gcloud/
+
+# Binary blobs
+*.xlsx
+*.pdf
+
+# XAC shared infra (rarely edited directly)
+_XAC/**

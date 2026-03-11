@@ -2,7 +2,7 @@
 .SYNOPSIS
     Verifies a developer's machine has everything needed to run local CI.
 .DESCRIPTION
-    Run standalone at any time. Checks Docker, Python, Node, gh, git, IAC/_XAC (shared CI),
+    Run standalone at any time. Checks Docker, Python, Node, gh, git, XAC/_XAC (shared CI),
     project .ci/config.ps1, docker-compose.ci.yml, and .secrets.baseline. Colored PASS/FAIL per check.
 .EXAMPLE
     .\_XAC\ci\scripts\verify-setup.ps1
