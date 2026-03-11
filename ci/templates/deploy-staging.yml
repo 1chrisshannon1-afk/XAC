@@ -1,0 +1,70 @@
+# deploy-staging.yml — <PROJECT NAME>
+# Replace all <PLACEHOLDER> values with project-specific values.
+# DO NOT copy the reusable workflow logic here — use `uses:` only.
+# This file is a template for onboarding; the other agent owns CI workflows.
+
+name: Deploy Staging
+on:
+  push:
+    branches: [staging]
+  workflow_dispatch:
+    inputs:
+      reason:
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+  id-token: write
+  security-events: write
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: true
+
+jobs:
+  preflight:
+    uses: 1chrisshannon1-afk/IAC/.github/workflows/reusable-preflight.yml@main
+
+  scans:
+    uses: 1chrisshannon1-afk/IAC/.github/workflows/reusable-scans.yml@main
+    with:
+      bandit-targets: "<SPACE SEPARATED DIRS>"
+
+  static-checks:
+    uses: 1chrisshannon1-afk/IAC/.github/workflows/reusable-static-checks.yml@main
+    with:
+      compileall-targets: "<SPACE SEPARATED PATHS>"
+      ruff-excludes: "<COMMA SEPARATED PATTERNS>"
+      mypy-target: "<PATH>"
+
+  tests:
+    uses: 1chrisshannon1-afk/IAC/.github/workflows/reusable-python-tests.yml@main
+    with:
+      unit-test-matrix: '<JSON ARRAY>'
+      integration-test-matrix: '<JSON ARRAY>'
+      unit-pytest-flags: "<FLAGS MATCHING .ci/config.ps1 CI_UNIT_PYTEST_FLAGS>"
+      integration-pytest-flags: "<FLAGS MATCHING .ci/config.ps1 CI_INTEGRATION_PYTEST_FLAGS>"
+      pythonpath-extra: "<EXTRA PYTHONPATH>"
+      needs-gcs-emulator: false
+      run-catalog-compile: ""
+
+  build:
+    needs: [preflight, scans, static-checks, tests]
+    uses: 1chrisshannon1-afk/IAC/.github/workflows/reusable-build-push.yml@main
+    with:
+      project-id: <PROJECT_ID>
+      repo-name: <ARTIFACT_REGISTRY_REPO>
+      service-name: <CLOUD_RUN_SERVICE>
+    secrets: inherit
+
+  deploy:
+    needs: build
+    uses: 1chrisshannon1-afk/IAC/.github/workflows/reusable-deploy-staging.yml@main
+    with:
+      project-id: <PROJECT_ID>
+      service-name: <CLOUD_RUN_SERVICE>
+      image-uri: ${{ needs.build.outputs.image-uri }}
+      revision-suffix: ${{ github.sha }}
+      playwright-dir: "<PATH OR EMPTY STRING>"
+    secrets: inherit

@@ -1,0 +1,27 @@
+# Dockerfile.node — starting template for Node frontend services
+# Copy to your repo as Dockerfile and adapt as needed.
+# Base image: run `docker pull node:20-slim` then `docker inspect --format='{{.RepoDigests}}' node:20-slim`
+# and replace REPLACE_WITH_REAL_DIGEST below with the sha256 digest (64 hex chars). Update quarterly.
+
+FROM node:20-slim@sha256:REPLACE_WITH_REAL_DIGEST
+
+WORKDIR /app
+
+# Install deps first (layer cache)
+COPY package*.json ./
+RUN npm ci --no-audit --no-fund
+
+# Copy application code
+COPY . .
+
+# Build (adjust script name to match your package.json)
+RUN npm run build
+
+# Non-root user for security
+RUN useradd --create-home appuser
+USER appuser
+
+# Health check — must match HEALTH_CHECK_CONTRACT.md if serving /health
+# Adjust or remove if frontend is static and health is handled by another service
+EXPOSE 3000
+CMD ["npm", "run", "start"]

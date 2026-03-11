@@ -1,89 +1,42 @@
-# SharedWorkflows
+# _XAC
 
-Shared CI/CD engine and GitHub Actions reusable workflows for GCP Cloud Run projects. Any project can onboard by copying templates and filling in project-specific config.
+Cross-project XAC (CI, IaC, monitoring, docs). Shared content used by all projects. Project-specific config lives in `_XAC_Config_ContractorScope_/` (or similar).
 
-**GitHub:** https://github.com/1chrisshannon1-afk/SharedWorkflows
+## Layout
 
-## Quick Start (New Project)
+| Path | Purpose |
+|------|---------|
+| **ci/** | Local CI engine, scripts, templates |
+| **ci/local_ci/core.ps1** | Shared CI engine (invoked by each project’s `local_ci.ps1`) |
+| **ci/scripts/** | bootstrap.ps1, verify-setup.ps1, canary-health-check.sh |
+| **ci/templates/** | config.ps1, local_ci.ps1, deploy-staging.yml, deploy-production.yml, Dockerfile.python, Dockerfile.node |
+| **iac/** | Terraform modules, policies, reusable-terraform workflow |
+| **iac/modules/** | wif-github, artifact-registry, secret-manager, cloud-run-service, cloud-build, network, budget-alerts, cloud-monitoring, project-baseline |
+| **iac/policies/** | OPA Rego (health check, no plain secrets, require labels) |
+| **iac/workflows/** | reusable-terraform.yml |
+| **monitoring/** | Dashboards and runbooks |
+| **monitoring/dashboards/** | cloud-run-baseline.json |
+| **monitoring/runbooks/** | HIGH_ERROR_RATE, HIGH_LATENCY, DEPLOYMENT_FAILED, COST_SPIKE, INSTANCE_ANOMALY |
+| **docs/** | Contracts and conventions (HEALTH_CHECK, SECRET_NAMING, ONBOARDING, IaC_ONBOARDING, etc.) |
 
-```bash
-# From your project root:
-../SharedWorkflows/scripts/bootstrap.sh
-# Then: edit .ci/config.ps1 and .github/workflows/deploy-staging.yml
-# Then: ../SharedWorkflows/scripts/verify-setup.sh
-# Then: .\local_ci.ps1
-```
+## How a consuming project uses this
 
-See `docs/ONBOARDING.md` for the full guide.
+1. **Option A — _XAC in repo:** Ensure `_XAC` is at repo root (this folder). Project `local_ci.ps1` loads `.ci/config.ps1` and bootstraps; bootstrap sets `$CI_SHARED_PATH` to `_XAC/ci` so `local_ci\core.ps1` is found.
 
-## Repository Contents
+2. **Option B — Sibling IAC:** Clone [IAC](https://github.com/1chrisshannon1-afk/IAC) as a sibling; point `$CI_SHARED_PATH` at that clone (or use `.ci/bootstrap-helper.ps1`).
 
-```
-SharedWorkflows/
-├── .github/
-│   ├── workflows/
-│   │   ├── reusable-preflight.yml          # Branch/commit checks
-│   │   ├── reusable-static-checks.yml      # compileall, ruff, mypy (non-blocking default)
-│   │   ├── reusable-python-tests.yml       # Unit + integration tests (parallel matrix)
-│   │   ├── reusable-build-push.yml         # Docker build + push to Artifact Registry
-│   │   ├── reusable-deploy-canary.yml      # Deploy at 0% traffic
-│   │   ├── reusable-smoke-tests.yml        # HTTP health/readiness checks
-│   │   ├── reusable-playwright.yml         # E2E tests (fixed 3 shards)
-│   │   ├── reusable-traffic-shift.yml      # 10% canary → 15-30 min bake → 100%
-│   │   └── reusable-rollback.yml           # Auto-rollback on failure
-│   └── actions/
-│       ├── gcp-auth/action.yml             # WIF auth composite action
-│       ├── start-emulators/action.yml      # Firestore + Redis + optional GCS
-│       └── notify/action.yml               # Slack + step summary notifications
-├── local_ci/
-│   └── core.ps1                            # Local CI engine (PowerShell)
-├── scripts/
-│   ├── bootstrap.sh                        # Bootstrap a new project
-│   ├── verify-setup.sh                     # Verify project setup
-│   └── canary-health-check.sh              # HTTP-based canary health check
-├── templates/
-│   ├── config.ps1.template                 # Project config template
-│   ├── local_ci.ps1.template               # Local CI wrapper template
-│   └── deploy-staging.yml.template         # GitHub Actions deploy template
-├── docs/
-│   └── ONBOARDING.md                       # Full onboarding guide
-├── briefs/
-│   ├── agent_brief_sharedworkflows_staging.md
-│   └── agent_brief_sharedworkflows_production.md
-└── README.md
-```
+3. **Terraform:** Project IaC (e.g. `_XAC_Config_ContractorScope_/iac`) uses `source = "../../_XAC/iac/modules/project-baseline"`. Run `terraform init` and `terraform plan` from the project iac dir.
 
-## Pipeline Stages (Staging)
+4. **Verify setup:** `.\_XAC\ci\scripts\verify-setup.ps1`
 
-```
-1. Preflight          — fast checks (requirements.txt, secrets baseline)
-2. Static checks      — compileall, ruff check, ruff format, mypy
-3. Tests (parallel)   — unit tests (matrix) + integration tests (matrix)
-4. Build & push       — Docker image to Artifact Registry
-5. Deploy at 0%       — new Cloud Run revision, zero traffic
-6. Smoke tests        — HTTP health checks against 0% revision
-7. Playwright E2E     — 3 fixed shards against 0% revision
-8. Canary (10%)       — shift 10% traffic, bake 15-30 min with HTTP monitoring
-9. Cutover (100%)     — full traffic + success notification
-10. Auto-rollback     — on any failure in 5-9
-```
+## Reference
 
-## Key Design Decisions
+See **docs/REFERENCE.md** for all `$CI_*` variables and **docs/IaC_ONBOARDING.md** for provisioning a new project.  
+To publish _XAC to the IAC GitHub repo, see **docs/PUBLISH_TO_IAC.md**.
 
-| Decision | Rationale |
-|----------|-----------|
-| **mypy non-blocking** | Matches existing CI; avoids blocking on type issues during migration |
-| **Playwright 3 fixed shards** | GitHub Actions cannot generate matrix from workflow input; fixed works |
-| **15-30 min canary bake** | 5 min is not statistically meaningful for error detection |
-| **HTTP-based canary health** | Real pass/fail threshold; no pseudocode gcloud monitoring |
-| **Success + rollback notifications** | Both directions must notify; previously only rollback did |
-| **pytest flags from config** | Prevents local/CI divergence; config is single source of truth |
-| **`jobs` at YAML top level** | GitHub Actions requires this; nested under `on:` causes parse error |
+## Full onboarding (monitoring, runbooks, policies, workflows)
 
-## Config Variables (core.ps1)
-
-See `templates/config.ps1.template` for the complete list. Key additions over basic setup:
-
-- `$CI_MYPY_BLOCKING` — `$false` (default) = warn only; `$true` = fail CI
-- `$CI_UNIT_PYTEST_FLAGS` — override default unit test flags
-- `$CI_INTEGRATION_PYTEST_FLAGS` — override default integration test flags
+- **Monitoring:** The **project-baseline** module composes **cloud-monitoring** per service: dashboards (from `monitoring/dashboards/cloud-run-baseline.json`), alert policies (error rate, latency, instance anomaly), and runbook links. Alert documentation uses **runbook_base_url** (set in project config or left empty to use this repo’s `_XAC/monitoring/runbooks`).
+- **Runbooks:** Live in **monitoring/runbooks/** (HIGH_ERROR_RATE, HIGH_LATENCY, DEPLOYMENT_FAILED, COST_SPIKE, INSTANCE_ANOMALY). Linked from alert policies when `runbook_base_url` is set (e.g. GitHub URL to this path).
+- **Policies:** OPA Rego in **iac/policies/** (require-labels, cloud-run-health-check, no-plain-env-secrets). Used by **iac/workflows/reusable-terraform.yml** when running Terraform from a project path (e.g. `_XAC_Config_ContractorScope_/iac`).
+- **Workflows:** **iac/workflows/reusable-terraform.yml** is the standard for Terraform + OPA. Call it with `project-path` pointing to your project’s Terraform dir.

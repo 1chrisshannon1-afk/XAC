@@ -1,0 +1,32 @@
+# Dockerfile.python — starting template for Python Cloud Run services
+# Copy to your repo as Dockerfile and adapt as needed.
+# Base image: run `docker pull python:3.11-slim` then `docker inspect --format='{{.RepoDigests}}' python:3.11-slim`
+# and replace REPLACE_WITH_REAL_DIGEST below with the sha256 digest (64 hex chars). Update quarterly.
+
+FROM python:3.11-slim@sha256:REPLACE_WITH_REAL_DIGEST5e
+
+# Install system deps
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Install Python deps first (layer cache)
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY . .
+
+# Non-root user for security
+RUN useradd --create-home appuser
+USER appuser
+
+# Health check — must match HEALTH_CHECK_CONTRACT.md
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD curl -f http://localhost:${PORT:-8080}/health || exit 1
+
+EXPOSE 8080
+CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]

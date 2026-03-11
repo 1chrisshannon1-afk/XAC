@@ -1,146 +1,96 @@
-# Onboarding a New Project to SharedWorkflows
+# Onboarding — Adding a New Project to IAC
 
-This guide walks through adding a new company/project to the shared CI/CD system.
+**Last reviewed:** 2026-03-11
 
-## Prerequisites
+Step-by-step guide for adding a new project so it uses IAC (shared CI/IaC/monitoring) for local CI and (when wired) deploy pipelines.
 
-- A GCP project with Cloud Run, Artifact Registry, and Workload Identity Federation set up.
-- A GitHub repo for the project.
-- Python 3.10 or 3.11 and Docker installed locally.
-- `requirements.txt` in the repo root.
+---
 
-## Step 1: Clone SharedWorkflows
+## 1. Clone IAC
 
-Clone this repo as a sibling to your project repo:
+Clone IAC as a sibling to your project repo:
 
-```powershell
-cd C:\dev  # or wherever your repos live
-git clone https://github.com/1chrisshannon1-afk/SharedWorkflows.git
+```bash
+git clone https://github.com/1chrisshannon1-afk/IAC.git
 ```
 
-## Step 2: Create project config
+(Or use the path your org uses for the shared repo. The project’s `local_ci.ps1` will expect it at a sibling directory named `IAC` unless overridden.)
 
-Copy the config template into your repo:
+---
+
+## 2. Copy templates into your project
+
+Copy (do not symlink) these files and adapt:
+
+| From | To |
+|------|-----|
+| `templates/ci-config/config.ps1` | `.ci/config.ps1` |
+| `templates/local-ci/local_ci.ps1` | `local_ci.ps1` (repo root) |
+| `templates/workflows/deploy-staging.yml` | `.github/workflows/deploy-staging.yml` |
+| `templates/docker/Dockerfile.python` | `Dockerfile` (adapt as needed) |
+
+---
+
+## 3. Edit `.ci/config.ps1`
+
+- Set all `$CI_*` variables for your project (name, compose file, containers, GCP test project, paths).
+- Copy unit test sets from your existing workflow matrix into `$CI_UNIT_TEST_SETS`.
+- Copy integration batches from your existing workflow matrix into `$CI_INTEGRATION_BATCHES`.
+- Ensure `$CI_UNIT_PYTEST_FLAGS` and `$CI_INTEGRATION_PYTEST_FLAGS` match what you use in deploy-staging (excluding `--cov` flags).
+
+---
+
+## 4. Edit `.github/workflows/deploy-staging.yml`
+
+- Replace all `<PLACEHOLDER>` values with your project ID, repo name, service name, paths.
+- Paste your unit-test-matrix JSON (matching `$CI_UNIT_TEST_SETS`).
+- Paste your integration-test-matrix JSON (matching `$CI_INTEGRATION_BATCHES`).
+- Ensure the pytest flag inputs match `.ci/config.ps1`.
+
+---
+
+## 5. Implement health check endpoints
+
+Implement `/health` and `/health/ready` per `docs/HEALTH_CHECK_CONTRACT.md` so smoke tests and canary checks work.
+
+---
+
+## 6. Verify setup
+
+From your project root:
 
 ```powershell
-mkdir .ci
-cp ../SharedWorkflows/templates/config.ps1.template .ci/config.ps1
+.\IAC\ci\scripts\verify-setup.ps1
 ```
 
-Edit `.ci/config.ps1` and fill in every value:
+(If you use _XAC in-repo: `.\_XAC\ci\scripts\verify-setup.ps1`.)
 
-| Variable | What to set |
-|----------|------------|
-| `$CI_PROJECT_NAME` | Human-readable name (e.g. "Acme App") |
-| `$CI_PROJECT_LABEL` | Docker compose label (e.g. "acmeapp") |
-| `$CI_COMPOSE_FILE` | Path to your CI docker-compose file |
-| `$CI_CONTAINERS` | Array of container names to health-check |
-| `$CI_GOOGLE_CLOUD_PROJECT` | GCP project for test env |
-| `$CI_COMPILEALL_TARGETS` | Paths for `python -m compileall` |
-| `$CI_RUFF_EXCLUDES` | Ruff exclude patterns |
-| `$CI_MYPY_TARGET` | Path for mypy |
-| `$CI_UNIT_TEST_SETS` | Array of `@{Name="..."; Paths="..."}` |
-| `$CI_INTEGRATION_BATCHES` | Array of `@{Name="..."; Paths="..."}` |
+Fix any reported failures (Docker, Python, Node, `gh`, `.ci/config.ps1`, `docker-compose.ci.yml`, `.secrets.baseline`).
 
-## Step 3: Create local CI wrapper
+---
 
-Copy the wrapper template:
-
-```powershell
-cp ../SharedWorkflows/templates/local_ci.ps1.template local_ci.ps1
-```
-
-No edits needed if SharedWorkflows is a sibling folder. Otherwise set `$CI_SHARED_PATH`.
-
-## Step 4: Verify local CI
+## 7. Run local CI
 
 ```powershell
 .\local_ci.ps1
 ```
 
-This runs all 5 steps: containers, deps, static checks, unit tests, integration + Playwright + Node.
+Local CI should bootstrap IAC automatically (clone if missing, warn if stale) when not using _XAC in-repo, and run the full pipeline.
 
-## Step 5: Create docker-compose.ci.yml
+---
 
-Your project needs a `docker-compose.ci.yml` (or whatever `$CI_COMPOSE_FILE` points to) that starts the emulators listed in `$CI_CONTAINERS`. Example:
+## 8. Push to staging (when CI is wired)
 
-```yaml
-services:
-  firestore-emulator:
-    image: google/cloud-sdk:slim
-    command: >
-      bash -c "apt-get update -qq && apt-get install -y -qq default-jre > /dev/null 2>&1 &&
-               gcloud emulators firestore start --host-port=0.0.0.0:8086 --project=test-project"
-    ports: ["8086:8086"]
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8086/"]
-      interval: 5s
-      retries: 12
-  redis:
-    image: redis:7-alpine
-    ports: ["6399:6379"]
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      retries: 10
-```
+Push to the `staging` branch — full CI + deploy pipeline should run. Confirm in your CI provider.
 
-## Step 6: Set up GitHub Actions (staging deploy)
+---
 
-Copy the deploy template:
+## 9. Security tab (when scans are wired)
 
-```powershell
-mkdir -p .github/workflows
-cp ../SharedWorkflows/templates/deploy-staging.yml.template .github/workflows/deploy-staging.yml
-```
+Verify that SARIF reports (e.g. Bandit, Trivy) appear in the GitHub Security tab after a CI run.
 
-Edit and replace all `YOUR_` placeholders:
-- `YOUR_GCP_PROJECT_ID` — your GCP project
-- `YOUR_ARTIFACT_REGISTRY_REPO` — Artifact Registry repo name
-- `YOUR_SERVICE_NAME` — Cloud Run service name
-- `YOUR_COMPILEALL_TARGETS`, `YOUR_RUFF_EXCLUDES`, `YOUR_MYPY_TARGET`
-- `YOUR_UNIT_TEST_PATHS`, `YOUR_INTEGRATION_PATHS`
-- `YOUR_EXTRA_PYTHONPATH`
+---
 
-## Step 7: Set GitHub repo variables
+## How to apply this in your project
 
-In your GitHub repo settings → Secrets and variables → Actions → Variables:
-
-| Variable | Value |
-|----------|-------|
-| `WIF_PROVIDER` | Your WIF provider resource name |
-| `WIF_SERVICE_ACCOUNT` | Your CI deployer service account email |
-
-## Step 8: Verify the setup
-
-Run the verification script:
-
-```bash
-./scripts/verify-setup.sh
-```
-
-Or manually check:
-- `.ci/config.ps1` exists and all `$CI_*` variables are set
-- `requirements.txt` exists
-- `docker-compose.ci.yml` (or `$CI_COMPOSE_FILE`) exists
-- `.github/workflows/deploy-staging.yml` has no `YOUR_` placeholders left
-
-## Step 9: Push and test
-
-```powershell
-git add .ci/ local_ci.ps1 .github/workflows/
-git commit -m "Add SharedWorkflows CI/CD"
-git push origin staging
-```
-
-Watch the GitHub Actions run. If it fails, check the logs — the pipeline will tell you which step failed.
-
-## Troubleshooting
-
-| Issue | Fix |
-|-------|-----|
-| "Shared CI core not found" | Set `$env:CI_SHARED_PATH` or clone SharedWorkflows as sibling |
-| mypy fails CI | Set `$CI_MYPY_BLOCKING = $false` in config (default) |
-| Tests use wrong pytest flags | Set `$CI_UNIT_PYTEST_FLAGS` / `$CI_INTEGRATION_PYTEST_FLAGS` in config |
-| WIF auth fails | Check `WIF_PROVIDER` and `WIF_SERVICE_ACCOUNT` repo variables |
-| Canary bake too short | Set `canary-bake-minutes: 15` or higher in deploy workflow |
+Use this doc as the canonical onboarding checklist. Link to it from your main README or CONTRIBUTING.md. When you add new required steps (e.g. new secrets or env vars), update this list and the “Last reviewed” date.

@@ -1,0 +1,116 @@
+# Reusable Terraform: validate, plan (with OPA), and optionally apply.
+# Consuming repos call this with project-path pointing to their terraform project dir.
+# Pinned: actions/checkout = checkout; hashicorp/setup-terraform = setup Terraform
+on:
+  workflow_call:
+    inputs:
+      project-path:
+        type: string
+        description: "Path within repo to the Terraform project dir (e.g. terraform/projects/contractorscope-ai)"
+      action:
+        type: string
+        default: "plan"
+        description: "plan | apply | validate"
+      environment:
+        type: string
+        description: "Environment name (e.g. staging)"
+    secrets:
+      GOOGLE_CREDENTIALS:
+        optional: true
+        description: "Optional GCP credentials for apply"
+
+jobs:
+  validate:
+    name: Terraform validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: ${{ inputs.project-path }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.6.0"
+      - name: Terraform init
+        run: terraform init -backend=false
+      - name: Terraform validate
+        run: terraform validate
+      - name: Terraform fmt check
+        run: terraform fmt -check -recursive -diff
+
+  plan:
+    name: Terraform plan
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: ${{ inputs.project-path }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.6.0"
+      - name: Terraform init
+        run: terraform init
+      - name: Terraform plan
+        run: terraform plan -out=tfplan.binary
+      - name: Export plan JSON
+        run: terraform show -json tfplan.binary > tfplan.json
+      - name: Install OPA
+        run: |
+          curl -L -o opa https://openpolicyagent.org/downloads/latest/opa_linux_amd64
+          chmod +x opa
+          sudo mv opa /usr/local/bin/
+      - name: Run OPA policies
+        run: |
+          # Policies live in _XAC/iac/policies; from project-path (e.g. _XAC_Config_ContractorScope_/iac) go to repo root then _XAC/iac/policies
+          POLICIES_DIR="${{ inputs.project-path }}/../../_XAC/iac/policies"
+          if [ ! -d "$POLICIES_DIR" ]; then
+            echo "::error::OPA policies not found at $POLICIES_DIR"
+            exit 1
+          fi
+          opa eval \
+            --input tfplan.json \
+            --data "$POLICIES_DIR" \
+            --format pretty \
+            "data.terraform.deny[_]" || true
+          DENIES=$(opa eval --input tfplan.json --data "$POLICIES_DIR" --format raw "data.terraform.deny" 2>/dev/null || echo "[]")
+          if [ "$DENIES" != "[]" ] && [ -n "$DENIES" ]; then
+            echo "::error::Terraform plan failed OPA policy checks. Fix the plan and re-run."
+            exit 1
+          fi
+      - name: Upload plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-${{ inputs.environment }}
+          path: ${{ inputs.project-path }}/tfplan.binary
+
+  apply:
+    name: Terraform apply
+    needs: plan
+    if: inputs.action == 'apply'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: ${{ inputs.environment }}
+    defaults:
+      run:
+        working-directory: ${{ inputs.project-path }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.6.0"
+      - name: Download plan
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan-${{ inputs.environment }}
+      - name: Terraform init
+        run: terraform init
+      - name: Terraform apply
+        run: terraform apply -input=false tfplan.binary
+      - name: Summary
+        run: |
+          echo "## Terraform apply complete" >> $GITHUB_STEP_SUMMARY
+          terraform output -json >> $GITHUB_STEP_SUMMARY || true

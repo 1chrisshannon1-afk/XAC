@@ -1,20 +1,9 @@
 # Reference: config and wrapper examples
 
-The shared engine in this repo is driven by **project-specific config**. The canonical examples live in the **ContractorScope AI** repo:
+The shared engine is driven by **project-specific config**. See **docs/REFERENCE.md** for the full living reference (all $CI_* variables, workflow inputs/outputs, changelog).
 
-| Purpose | Location (ContractorScope AI repo) |
-|--------|-------------------------------------|
-| Project config example | `_SHARED CI (in dev)/config.ps1` |
-| Wrapper script example | `_SHARED CI (in dev)/local_ci.ps1` |
-| Same engine (for diff/reference) | `_SHARED CI (in dev)/core.ps1` |
-
-Use **`_SHARED CI (in dev)/config.ps1`** as the template for your `.ci/config.ps1`: it defines every required `$CI_*` variable and the structure of unit test sets, integration batches, and Node jobs.
-
-Your repo’s **`local_ci.ps1`** should:
-
-1. Set `$ROOT = $PSScriptRoot` (or `$PWD.Path`).
-2. Dot-source your project config: `. (Join-Path $ROOT ".ci\config.ps1")`
-3. Set `$CI_SHARED_PATH` to the directory of your SharedWorkflows clone (or use `$env:CI_SHARED_PATH`).
-4. Dot-source the shared engine: `. (Join-Path $CI_SHARED_PATH "local_ci\core.ps1")`
-
-No other changes are required in the consuming repo until you are ready to switch from existing CI to this standardized flow.
+Quick pointers:
+- **Project config:** Copy from `ci/templates/config.ps1` to your repo as `.ci/config.ps1`.
+- **Wrapper:** Copy from `ci/templates/local_ci.ps1` to your repo root. It loads `.ci/config.ps1` then invokes `_XAC/ci/local_ci/core.ps1` (or sibling IAC).
+- **Bootstrap:** Dot-source `_XAC/ci/scripts/bootstrap.ps1` (or use `.ci/bootstrap-helper.ps1`) so `$CI_SHARED_PATH` is set before core.ps1 runs.
+- **Project-specific CI/IaC:** See `_XAC_Config_ContractorScope_/` for ContractorScope AI.
