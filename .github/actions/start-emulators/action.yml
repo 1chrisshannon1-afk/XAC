@@ -1,0 +1,52 @@
+name: Start Emulators
+description: Start Firestore emulator, Redis, and optional GCS emulator for CI test jobs.
+
+inputs:
+  firestore-port:
+    description: "Host port for Firestore emulator"
+    default: "8086"
+  redis-port:
+    description: "Host port for Redis"
+    default: "6399"
+  gcs-emulator:
+    description: "Start GCS emulator (true/false)"
+    default: "false"
+  gcs-port:
+    description: "Host port for GCS emulator"
+    default: "9023"
+  gcp-project:
+    description: "GCP project ID for emulator"
+    default: "test-project"
+
+runs:
+  using: composite
+  steps:
+    - name: Start Firestore emulator
+      shell: bash
+      run: |
+        docker run -d --name firestore-emulator -p ${{ inputs.firestore-port }}:8086 \
+          google/cloud-sdk:slim bash -c \
+          "apt-get update -qq && apt-get install -y -qq default-jre > /dev/null 2>&1 && \
+           gcloud emulators firestore start --host-port=0.0.0.0:8086 --project=${{ inputs.gcp-project }}"
+    - name: Start Redis
+      shell: bash
+      run: docker run -d --name redis-ci -p ${{ inputs.redis-port }}:6379 redis:7-alpine
+    - name: Start GCS emulator
+      if: inputs.gcs-emulator == 'true'
+      shell: bash
+      run: |
+        docker run -d --name gcs-emulator -p ${{ inputs.gcs-port }}:9023 \
+          fsouza/fake-gcs-server -scheme http -port 9023
+    - name: Wait for emulators
+      shell: bash
+      run: |
+        echo "Waiting for Redis..."
+        for i in $(seq 1 30); do
+          docker exec redis-ci redis-cli ping 2>/dev/null | grep -q PONG && echo "Redis ready" && break
+          sleep 2
+        done
+        echo "Waiting for Firestore..."
+        for i in $(seq 1 60); do
+          curl -sf http://localhost:${{ inputs.firestore-port }}/ >/dev/null 2>&1 && echo "Firestore ready" && break
+          sleep 3
+        done

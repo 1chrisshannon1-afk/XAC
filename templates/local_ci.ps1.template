@@ -1,0 +1,34 @@
+<#
+.SYNOPSIS
+    Run full CI locally for YOUR_PROJECT_NAME.
+.DESCRIPTION
+    Copy this to your repo root as local_ci.ps1.
+    Set CI_SHARED_PATH to your SharedWorkflows clone.
+.EXAMPLE
+    .\local_ci.ps1
+#>
+
+$ErrorActionPreference = "Continue"
+$ROOT = $PSScriptRoot
+if (-not $ROOT) { $ROOT = $PWD.Path }
+
+# ── Load project-specific config ──────────────────────────────────────────────
+. (Join-Path $ROOT ".ci\config.ps1")
+
+# ── Invoke shared CI engine ───────────────────────────────────────────────────
+$CI_SHARED_PATH = if ($env:CI_SHARED_PATH) {
+    $env:CI_SHARED_PATH
+} else {
+    Join-Path (Split-Path $ROOT -Parent) "SharedWorkflows"
+}
+
+$corePath = Join-Path $CI_SHARED_PATH "local_ci\core.ps1"
+
+if (-not (Test-Path $corePath)) {
+    Write-Host "ERROR: Shared CI core not found at: $corePath" -ForegroundColor Red
+    Write-Host "Clone SharedWorkflows next to this repo, or set CI_SHARED_PATH." -ForegroundColor Yellow
+    Write-Host "  git clone https://github.com/1chrisshannon1-afk/SharedWorkflows.git" -ForegroundColor Gray
+    exit 1
+}
+
+. $corePath

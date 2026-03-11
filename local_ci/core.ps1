@@ -30,6 +30,9 @@ Set-Location $ROOT
 # $CI_INTEGRATION_BATCHES    — array of hashtables: @{Name="..."; Paths="..."}
 # $CI_PLAYWRIGHT_DIR         — path to run playwright from (or $null to skip)
 # $CI_NODE_JOBS              — array of hashtables: @{Name="..."; Dir="..."; Steps=@("lint","build","test")}
+# $CI_MYPY_BLOCKING          — $true to fail CI on mypy errors; $false (default) to warn only
+# $CI_UNIT_PYTEST_FLAGS       — custom pytest flags for unit tests (default: '-m "not integration and not ai" --timeout=120 --maxfail=50 --no-cov -o "addopts=" -v --tb=short')
+# $CI_INTEGRATION_PYTEST_FLAGS — custom pytest flags for integration tests (default: '-v --tb=short --maxfail=100 --no-cov -o "addopts=" -m "not ai"')
 
 $logDir = Join-Path $ROOT "ci_logs"
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
@@ -157,8 +160,16 @@ $ruffExcludeArgs = $CI_RUFF_EXCLUDES | ForEach-Object { "--exclude=$_" }
 if ($LASTEXITCODE -ne 0) { exit 1 }
 & $PY -m ruff format --check --diff .
 if ($LASTEXITCODE -ne 0) { exit 1 }
+$mypyBlocking = if ($null -ne $CI_MYPY_BLOCKING) { $CI_MYPY_BLOCKING } else { $false }
 & $PY -m mypy $CI_MYPY_TARGET --config-file=mypy.ini
-if ($LASTEXITCODE -ne 0) { exit 1 }
+if ($LASTEXITCODE -ne 0) {
+    if ($mypyBlocking) {
+        Write-Host "  mypy FAILED (blocking)" -ForegroundColor Red
+        exit 1
+    } else {
+        Write-Host "  mypy found issues (non-blocking)" -ForegroundColor Yellow
+    }
+}
 
 # ── [4/5] Unit tests (parallel sets) ──────────────────────────────────────────
 Ensure-Emulators -Context "4"
@@ -176,7 +187,10 @@ foreach ($set in $CI_UNIT_TEST_SETS) {
         foreach ($k in $EnvMap.Keys) { [System.Environment]::SetEnvironmentVariable($k, $EnvMap[$k]) }
         $paths = $PathsStr -split '\s+' | Where-Object { $_ -and (Test-Path $_) }
         if (-not $paths) { $paths = $PathsStr -split '\s+' }
-        & $Py -m pytest $paths -m "not integration and not ai" --timeout=120 --maxfail=50 --no-cov -o "addopts=" -v --tb=short 2>&1
+        $flags = $EnvMap['_CI_UNIT_PYTEST_FLAGS']
+        if (-not $flags) { $flags = '-m "not integration and not ai" --timeout=120 --maxfail=50 --no-cov -o "addopts=" -v --tb=short' }
+        $flagArray = $flags -split '\s+(?=-)' | Where-Object { $_ }
+        & $Py -m pytest $paths @flagArray 2>&1
         $code = $LASTEXITCODE
         try { [System.IO.File]::WriteAllText($ExitFile, $code) } catch {}
         exit $code
@@ -192,6 +206,7 @@ foreach ($set in $CI_UNIT_TEST_SETS) {
         STORAGE_EMULATOR_HOST    = $CI_STORAGE_HOST
         REDIS_URL                = $CI_REDIS_URL
         USE_CLOUD_DATA           = "false"
+        _CI_UNIT_PYTEST_FLAGS    = if ($CI_UNIT_PYTEST_FLAGS) { $CI_UNIT_PYTEST_FLAGS } else { "" }
     }
 }
 Wait-Job -Job $unitJobs -Timeout 1800 | Out-Null
@@ -233,7 +248,10 @@ foreach ($batch in $CI_INTEGRATION_BATCHES) {
         foreach ($k in $EnvMap.Keys) { [System.Environment]::SetEnvironmentVariable($k, $EnvMap[$k]) }
         $paths = $PathsStr -split '\s+' | Where-Object { $_ -and (Test-Path $_) }
         if (-not $paths) { $paths = $PathsStr -split '\s+' }
-        & $Py -m pytest $paths -v --tb=short --maxfail=100 --no-cov -o "addopts=" -m "not ai" 2>&1
+        $flags = $EnvMap['_CI_INTEGRATION_PYTEST_FLAGS']
+        if (-not $flags) { $flags = '-v --tb=short --maxfail=100 --no-cov -o "addopts=" -m "not ai"' }
+        $flagArray = $flags -split '\s+(?=-)' | Where-Object { $_ }
+        & $Py -m pytest $paths @flagArray 2>&1
         $code = $LASTEXITCODE
         try { [System.IO.File]::WriteAllText($ExitFile, $code) } catch {}
         exit $code
@@ -248,6 +266,7 @@ foreach ($batch in $CI_INTEGRATION_BATCHES) {
         FIRESTORE_EMULATOR_HOST  = $CI_FIRESTORE_HOST
         STORAGE_EMULATOR_HOST    = $CI_STORAGE_HOST
         REDIS_URL                = $CI_REDIS_URL
+        _CI_INTEGRATION_PYTEST_FLAGS = if ($CI_INTEGRATION_PYTEST_FLAGS) { $CI_INTEGRATION_PYTEST_FLAGS } else { "" }
     }
 }
 

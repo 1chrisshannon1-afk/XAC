@@ -1,0 +1,53 @@
+# .ci/config.ps1 — YOUR_PROJECT_NAME
+# All project-specific CI configuration.
+# Copy this to your repo root as .ci/config.ps1 and fill in all values.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Project identity ──────────────────────────────────────────────────────────
+$CI_PROJECT_NAME  = "YOUR_PROJECT_NAME"
+$CI_PROJECT_LABEL = "your_project_label"   # must match com.docker.compose.project label
+
+# ── Docker ────────────────────────────────────────────────────────────────────
+$CI_COMPOSE_FILE = "docker-compose.ci.yml"
+$CI_CONTAINERS   = @("firestore-emulator", "redis")  # add "gcs-emulator" if needed
+
+# ── Test environment ──────────────────────────────────────────────────────────
+$CI_GOOGLE_CLOUD_PROJECT = "your-gcp-project-test"
+$CI_FIRESTORE_HOST       = "localhost:8086"
+$CI_STORAGE_HOST         = "http://localhost:9023"
+$CI_REDIS_URL            = "redis://localhost:6399/0"
+
+# ── Python paths ──────────────────────────────────────────────────────────────
+$CI_PYTHONPATH_EXTRA = @("$ROOT\src")           # add extra dirs to PYTHONPATH
+$CI_CATALOG_DIR      = $null                     # set if you have a catalog
+
+# Catalog compile — set to $null if project has no catalog
+$CI_CATALOG_COMPILE_CMD = $null
+
+# ── Static analysis ───────────────────────────────────────────────────────────
+$CI_COMPILEALL_TARGETS = @("src")
+$CI_RUFF_EXCLUDES = @("tests/**", "_archive/**")
+$CI_MYPY_TARGET = "src"
+$CI_MYPY_BLOCKING = $false  # set $true to fail CI on mypy errors
+
+# ── Pytest flags (override defaults or leave commented for defaults) ──────────
+# $CI_UNIT_PYTEST_FLAGS        = '-m "not integration and not ai" --timeout=120 --maxfail=50 --no-cov -o "addopts=" -v --tb=short'
+# $CI_INTEGRATION_PYTEST_FLAGS = '-v --tb=short --maxfail=100 --no-cov -o "addopts=" -m "not ai"'
+
+# ── Unit test sets (parallel) ─────────────────────────────────────────────────
+$CI_UNIT_TEST_SETS = @(
+    @{ Name = "unit_tests_1"; Paths = "src/tests" }
+)
+
+# ── Integration test batches (parallel) ───────────────────────────────────────
+$CI_INTEGRATION_BATCHES = @(
+    @{ Name = "integration_1"; Paths = "integration_tests" }
+)
+
+# ── Playwright ────────────────────────────────────────────────────────────────
+$CI_PLAYWRIGHT_DIR = $null   # set to frontend dir, or $null to skip
+
+# ── Node / frontend jobs ──────────────────────────────────────────────────────
+$CI_NODE_JOBS = @(
+    # @{ Name = "Frontend";  Dir = "frontend"; Steps = @("tsc", "test") }
+)

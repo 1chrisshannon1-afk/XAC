@@ -1,0 +1,50 @@
+name: Notify
+description: Send deployment notification via Slack webhook (or step summary if no webhook).
+
+inputs:
+  status:
+    description: "success | failure | rollback"
+    required: true
+  message:
+    description: "Notification message"
+    required: true
+  revision:
+    description: "Deployed revision name"
+    default: ""
+  slack-webhook-url:
+    description: "Slack incoming webhook URL (leave empty to skip Slack)"
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Write to step summary
+      shell: bash
+      run: |
+        if [ "${{ inputs.status }}" = "success" ]; then
+          ICON="[SUCCESS]"
+        elif [ "${{ inputs.status }}" = "rollback" ]; then
+          ICON="[ROLLBACK]"
+        else
+          ICON="[FAILURE]"
+        fi
+        echo "## $ICON ${{ inputs.message }}" >> $GITHUB_STEP_SUMMARY
+        [ -n "${{ inputs.revision }}" ] && echo "Revision: ${{ inputs.revision }}" >> $GITHUB_STEP_SUMMARY
+    - name: Slack notification
+      if: inputs.slack-webhook-url != ''
+      shell: bash
+      run: |
+        COLOR=$( [ "${{ inputs.status }}" = "success" ] && echo "good" || echo "danger" )
+        EMOJI=$( [ "${{ inputs.status }}" = "success" ] && echo "deployed" || echo "failed" )
+        curl -s -X POST "${{ inputs.slack-webhook-url }}" \
+          -H "Content-Type: application/json" \
+          -d "{
+            \"attachments\": [{
+              \"color\": \"$COLOR\",
+              \"text\": \"$EMOJI: ${{ inputs.message }}\",
+              \"fields\": [
+                {\"title\": \"Revision\", \"value\": \"${{ inputs.revision }}\", \"short\": true},
+                {\"title\": \"Repo\", \"value\": \"${{ github.repository }}\", \"short\": true}
+              ]
+            }]
+          }"

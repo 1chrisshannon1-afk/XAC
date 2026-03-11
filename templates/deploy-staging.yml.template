@@ -1,0 +1,106 @@
+# Deploy Staging — YOUR_PROJECT_NAME (SharedWorkflows)
+# Copy to .github/workflows/deploy-staging.yml in your repo.
+# Fill in all YOUR_ placeholders.
+name: Deploy Staging
+on:
+  push:
+    branches: [staging]
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for deploy (optional)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+  id-token: write
+  security-events: write
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: true
+
+env:
+  PROJECT_ID: YOUR_GCP_PROJECT_ID
+  REGION: us-central1
+
+jobs:
+  preflight:
+    uses: 1chrisshannon1-afk/SharedWorkflows/.github/workflows/reusable-preflight.yml@main
+
+  static-checks:
+    needs: preflight
+    uses: 1chrisshannon1-afk/SharedWorkflows/.github/workflows/reusable-static-checks.yml@main
+    with:
+      compileall-targets: "YOUR_COMPILEALL_TARGETS"
+      ruff-excludes: "YOUR_RUFF_EXCLUDES"
+      mypy-target: "YOUR_MYPY_TARGET"
+      mypy-blocking: false
+
+  tests:
+    needs: preflight
+    uses: 1chrisshannon1-afk/SharedWorkflows/.github/workflows/reusable-python-tests.yml@main
+    with:
+      unit-test-matrix: |
+        [{"set_name":"unit_1","test_paths":"YOUR_UNIT_TEST_PATHS"}]
+      integration-test-matrix: |
+        [{"batch_name":"integration_1","test_paths":"YOUR_INTEGRATION_PATHS"}]
+      pythonpath-extra: "YOUR_EXTRA_PYTHONPATH"
+      gcp-test-project: "YOUR_GCP_TEST_PROJECT"
+
+  build:
+    needs: [static-checks, tests]
+    uses: 1chrisshannon1-afk/SharedWorkflows/.github/workflows/reusable-build-push.yml@main
+    with:
+      project-id: YOUR_GCP_PROJECT_ID
+      repo-name: YOUR_ARTIFACT_REGISTRY_REPO
+      service-name: YOUR_SERVICE_NAME
+      dockerfile: Dockerfile
+    secrets: inherit
+
+  deploy:
+    needs: build
+    uses: 1chrisshannon1-afk/SharedWorkflows/.github/workflows/reusable-deploy-canary.yml@main
+    with:
+      project-id: YOUR_GCP_PROJECT_ID
+      service-name: YOUR_SERVICE_NAME
+      image-uri: ${{ needs.build.outputs.image-uri }}
+      revision-suffix: ${{ github.sha }}
+      environment: staging
+    secrets: inherit
+
+  smoke:
+    needs: deploy
+    uses: 1chrisshannon1-afk/SharedWorkflows/.github/workflows/reusable-smoke-tests.yml@main
+    with:
+      revision-url: ${{ needs.deploy.outputs.revision-url }}
+
+  # Uncomment if you have Playwright tests:
+  # playwright:
+  #   needs: smoke
+  #   uses: 1chrisshannon1-afk/SharedWorkflows/.github/workflows/reusable-playwright.yml@main
+  #   with:
+  #     revision-url: ${{ needs.deploy.outputs.revision-url }}
+  #     playwright-dir: YOUR_PLAYWRIGHT_DIR
+
+  traffic:
+    needs: smoke  # change to [smoke, playwright] if using Playwright
+    uses: 1chrisshannon1-afk/SharedWorkflows/.github/workflows/reusable-traffic-shift.yml@main
+    with:
+      project-id: YOUR_GCP_PROJECT_ID
+      service-name: YOUR_SERVICE_NAME
+      revision-name: ${{ needs.deploy.outputs.revision-name }}
+      canary-bake-minutes: 15
+    secrets: inherit
+
+  rollback:
+    needs: [deploy, smoke, traffic]
+    if: failure() && needs.deploy.result == 'success'
+    uses: 1chrisshannon1-afk/SharedWorkflows/.github/workflows/reusable-rollback.yml@main
+    with:
+      project-id: YOUR_GCP_PROJECT_ID
+      service-name: YOUR_SERVICE_NAME
+      failed-revision: ${{ needs.deploy.outputs.revision-name }}
+      reason: "Post-deploy validation failed"
+    secrets: inherit

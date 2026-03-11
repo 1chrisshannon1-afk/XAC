@@ -1,74 +1,89 @@
 # SharedWorkflows
 
-Shared CI engine and (later) GitHub Actions reusable workflows. Consuming projects keep their own config and a thin wrapper that invokes this repo.
+Shared CI/CD engine and GitHub Actions reusable workflows for GCP Cloud Run projects. Any project can onboard by copying templates and filling in project-specific config.
 
-## Repository
+**GitHub:** https://github.com/1chrisshannon1-afk/SharedWorkflows
 
-- **GitHub:** [https://github.com/1chrisshannon1-afk/SharedWorkflows](https://github.com/1chrisshannon1-afk/SharedWorkflows)
+## Quick Start (New Project)
 
-## Reference documentation
+```bash
+# From your project root:
+../SharedWorkflows/scripts/bootstrap.sh
+# Then: edit .ci/config.ps1 and .github/workflows/deploy-staging.yml
+# Then: ../SharedWorkflows/scripts/verify-setup.sh
+# Then: .\local_ci.ps1
+```
 
-The **canonical design and project-specific config examples** live in the ContractorScope AI repo under:
+See `docs/ONBOARDING.md` for the full guide.
 
-- **`_SHARED CI (in dev)/`** — reference implementation and docs:
-  - **`config.ps1`** — example project config (all `$CI_*` variables). Copy/adapt into your repo as `.ci/config.ps1`.
-  - **`local_ci.ps1`** — example wrapper that loads `.ci/config.ps1` and invokes this repo’s `local_ci/core.ps1`.
-  - **`core.ps1`** — same logic as this repo’s `local_ci/core.ps1`; kept in dev for reference and diff.
+## Repository Contents
 
-Use those files as the source of truth for variable names, step order, and how to wire a new project.
+```
+SharedWorkflows/
+├── .github/
+│   ├── workflows/
+│   │   ├── reusable-preflight.yml          # Branch/commit checks
+│   │   ├── reusable-static-checks.yml      # compileall, ruff, mypy (non-blocking default)
+│   │   ├── reusable-python-tests.yml       # Unit + integration tests (parallel matrix)
+│   │   ├── reusable-build-push.yml         # Docker build + push to Artifact Registry
+│   │   ├── reusable-deploy-canary.yml      # Deploy at 0% traffic
+│   │   ├── reusable-smoke-tests.yml        # HTTP health/readiness checks
+│   │   ├── reusable-playwright.yml         # E2E tests (fixed 3 shards)
+│   │   ├── reusable-traffic-shift.yml      # 10% canary → 15-30 min bake → 100%
+│   │   └── reusable-rollback.yml           # Auto-rollback on failure
+│   └── actions/
+│       ├── gcp-auth/action.yml             # WIF auth composite action
+│       ├── start-emulators/action.yml      # Firestore + Redis + optional GCS
+│       └── notify/action.yml               # Slack + step summary notifications
+├── local_ci/
+│   └── core.ps1                            # Local CI engine (PowerShell)
+├── scripts/
+│   ├── bootstrap.sh                        # Bootstrap a new project
+│   ├── verify-setup.sh                     # Verify project setup
+│   └── canary-health-check.sh              # HTTP-based canary health check
+├── templates/
+│   ├── config.ps1.template                 # Project config template
+│   ├── local_ci.ps1.template               # Local CI wrapper template
+│   └── deploy-staging.yml.template         # GitHub Actions deploy template
+├── docs/
+│   └── ONBOARDING.md                       # Full onboarding guide
+├── briefs/
+│   ├── agent_brief_sharedworkflows_staging.md
+│   └── agent_brief_sharedworkflows_production.md
+└── README.md
+```
 
-## Contents of this repo
+## Pipeline Stages (Staging)
 
-| Path | Purpose |
-|------|--------|
-| `local_ci/core.ps1` | Shared CI engine. Do not run directly; invoked by each project’s `local_ci.ps1` after loading its `.ci/config.ps1`. |
-| `.github/workflows/*.yml` | Reusable workflows: preflight, build-push, deploy-canary, smoke-tests, playwright (fixed 3 shards), traffic-shift (15–30 min bake, HTTP health check), rollback. |
-| `scripts/canary-health-check.sh` | HTTP-based canary health check (bake period, max failures threshold). |
-| `briefs/` | Agent briefs for staging and production (pipeline design, fixes: bake time, Playwright shards, migrations, notifications). |
+```
+1. Preflight          — fast checks (requirements.txt, secrets baseline)
+2. Static checks      — compileall, ruff check, ruff format, mypy
+3. Tests (parallel)   — unit tests (matrix) + integration tests (matrix)
+4. Build & push       — Docker image to Artifact Registry
+5. Deploy at 0%       — new Cloud Run revision, zero traffic
+6. Smoke tests        — HTTP health checks against 0% revision
+7. Playwright E2E     — 3 fixed shards against 0% revision
+8. Canary (10%)       — shift 10% traffic, bake 15-30 min with HTTP monitoring
+9. Cutover (100%)     — full traffic + success notification
+10. Auto-rollback     — on any failure in 5-9
+```
 
-## How a consuming project uses this
+## Key Design Decisions
 
-1. **In your repo:** Add a project config and a wrapper script.
-   - **`.ci/config.ps1`** — Set all `$CI_*` variables (project name, compose file, containers, test paths, unit/integration sets, Playwright dir, Node jobs). See `_SHARED CI (in dev)/config.ps1` for the full list and an example.
-   - **`local_ci.ps1`** (at repo root) — Set `$ROOT`, dot-source `.ci\config.ps1`, set `$CI_SHARED_PATH` to the path of your SharedWorkflows clone, then dot-source `$CI_SHARED_PATH\local_ci\core.ps1`. See `_SHARED CI (in dev)/local_ci.ps1` for the exact pattern.
+| Decision | Rationale |
+|----------|-----------|
+| **mypy non-blocking** | Matches existing CI; avoids blocking on type issues during migration |
+| **Playwright 3 fixed shards** | GitHub Actions cannot generate matrix from workflow input; fixed works |
+| **15-30 min canary bake** | 5 min is not statistically meaningful for error detection |
+| **HTTP-based canary health** | Real pass/fail threshold; no pseudocode gcloud monitoring |
+| **Success + rollback notifications** | Both directions must notify; previously only rollback did |
+| **pytest flags from config** | Prevents local/CI divergence; config is single source of truth |
+| **`jobs` at YAML top level** | GitHub Actions requires this; nested under `on:` causes parse error |
 
-2. **Clone SharedWorkflows** (this repo) somewhere, e.g. sibling to your project:
-   ```powershell
-   git clone https://github.com/1chrisshannon1-afk/SharedWorkflows.git
-   ```
+## Config Variables (core.ps1)
 
-3. **Point your wrapper at it** (one of):
-   - **Env:** `$env:CI_SHARED_PATH = "C:\path\to\SharedWorkflows"`
-   - **Sibling:** In `local_ci.ps1`, use `Join-Path (Split-Path $ROOT -Parent) "SharedWorkflows"` so the clone lives next to your repo.
+See `templates/config.ps1.template` for the complete list. Key additions over basic setup:
 
-4. **Run CI:** From your project root, run `.\local_ci.ps1`. It loads your config and runs the shared engine.
-
-## Required config variables (set in `.ci/config.ps1`)
-
-Your `.ci/config.ps1` must define (see reference `config.ps1` for types and examples):
-
-- `$CI_PROJECT_NAME`, `$CI_PROJECT_LABEL`
-- `$CI_COMPOSE_FILE`, `$CI_CONTAINERS`
-- `$CI_GOOGLE_CLOUD_PROJECT`, `$CI_FIRESTORE_HOST`, `$CI_STORAGE_HOST`, `$CI_REDIS_URL`
-- `$CI_PYTHONPATH_EXTRA`, `$CI_CATALOG_DIR`, `$CI_CATALOG_COMPILE_CMD` (or `$null`)
-- `$CI_COMPILEALL_TARGETS`, `$CI_RUFF_EXCLUDES`, `$CI_MYPY_TARGET`
-- `$CI_UNIT_TEST_SETS`, `$CI_INTEGRATION_BATCHES`
-- `$CI_PLAYWRIGHT_DIR` (or `$null`), `$CI_NODE_JOBS`
-
-## CI steps (executed by `local_ci/core.ps1`)
-
-1. **Containers** — Down, prune by project label, up with `docker compose -f $CI_COMPOSE_FILE up -d --build --wait`.
-2. **Python** — `pip install`, optional catalog compile (if `$CI_CATALOG_COMPILE_CMD` is set).
-3. **Static** — `compileall`, `ruff check`, `ruff format --check`, `mypy`.
-4. **Unit tests** — Parallel pytest sets (emulators must be healthy).
-5. **Integration + Playwright + Node** — All in parallel; then cleanup containers.
-
-## Pushing this content to GitHub
-
-This folder (e.g. `SharedWorkflows/` in ContractorScope AI) mirrors what should be in the GitHub repo. To publish:
-
-1. Clone the repo: `git clone https://github.com/1chrisshannon1-afk/SharedWorkflows.git`
-2. Copy into the clone: `local_ci/`, `README.md` (overwrite as needed).
-3. Commit and push from the clone.
-
-Existing CI in consuming repos is **not** modified; this runs in parallel until you switch the wrapper to use `CI_SHARED_PATH` pointing at SharedWorkflows.
+- `$CI_MYPY_BLOCKING` — `$false` (default) = warn only; `$true` = fail CI
+- `$CI_UNIT_PYTEST_FLAGS` — override default unit test flags
+- `$CI_INTEGRATION_PYTEST_FLAGS` — override default integration test flags
