@@ -25,6 +25,7 @@ Set-Location $ROOT
 # $CI_UNIT_TEST_SETS         — array of hashtables: @{Name="..."; Paths="..."}
 # $CI_INTEGRATION_BATCHES    — array of hashtables: @{Name="..."; Paths="..."}
 # $CI_PLAYWRIGHT_DIR         — path to run playwright from (or $null to skip)
+# $CI_PLAYWRIGHT_BATCHES     — optional array of @{Name="..."; Paths="..."}; each batch timeout 10 min
 # $CI_NODE_JOBS              — array of hashtables: @{Name="..."; Dir="..."; Steps=@("lint","build","test")}
 
 $logDir = Join-Path $ROOT "ci_logs"
@@ -292,7 +293,7 @@ function Invoke-SingleNodeJob {
 
 $integrationBatchTimeout = 600   # 10 min per integration batch
 $nodeJobTimeout = 600            # 10 min per Node job (frontend tests can be slow)
-$playwrightTimeout = 1200        # 20 min for Playwright
+$playwrightTimeout = 600   # 10 min per Playwright batch (no step > 10 min)
 
 $phaseLabels = @("5a", "5b", "5c", "5d")
 # 5a–5d – Integration batches (one per batch in config)
@@ -310,28 +311,35 @@ for ($i = 0; $i -lt $CI_INTEGRATION_BATCHES.Count; $i++) {
 # 5e – Playwright
 if ($CI_PLAYWRIGHT_DIR) {
     Invoke-EmulatorCheck -Context "5e"
-    Write-Host "[5e/9] Playwright (chromium), timeout 20 min..." -ForegroundColor Yellow
-    $playwrightExitFile = Join-Path $logDir "playwright.exit"
-    if (Test-Path $playwrightExitFile) { Remove-Item $playwrightExitFile -Force }
-    $playwrightJob = Start-Job -ScriptBlock {
-        param($Dir, $ExitFile)
-        Set-Location $Dir
-        npx playwright install --with-deps chromium 2>$null
-        npx playwright test --project=chromium 2>&1
-        $code = $LASTEXITCODE
-        try { [System.IO.File]::WriteAllText($ExitFile, $code) } catch {}
-        exit $code
-    } -ArgumentList $CI_PLAYWRIGHT_DIR, $playwrightExitFile
-    Wait-Job -Job $playwrightJob -Timeout $playwrightTimeout | Out-Null
-    $ec = 1
-    if ($playwrightJob.State -eq "Completed" -and (Test-Path $playwrightExitFile)) { $ec = [int](Get-Content $playwrightExitFile -Raw) }
-    elseif ($playwrightJob.State -ne "Completed") { Write-Host "  [Playwright] TIMEOUT or RUNNING" -ForegroundColor Red }
-    $status = if ($ec -eq 0) { "PASS" } else { "FAIL" }; $color = if ($ec -eq 0) { "Green" } else { "Red" }
-    Write-Host "  [Playwright] $status" -ForegroundColor $color
-    Remove-Job -Job $playwrightJob -Force -ErrorAction SilentlyContinue
-    if ($ec -ne 0) {
-        "Local CI: Playwright (5e) failed." | Set-Content (Join-Path $logDir "LATEST_FAILURE.md") -Encoding UTF8
-        docker compose -f $CI_COMPOSE_FILE down 2>$null; exit 1
+    $playwrightBatches = if ($CI_PLAYWRIGHT_BATCHES -and $CI_PLAYWRIGHT_BATCHES.Count -gt 0) { $CI_PLAYWRIGHT_BATCHES } else { @(@{ Name = "Playwright"; Paths = "" }) }
+    $batchIdx = 0
+    foreach ($pwBatch in $playwrightBatches) {
+        $batchIdx++
+        $label = if ($playwrightBatches.Count -gt 1) { "5e-$batchIdx/$($playwrightBatches.Count)" } else { "5e/9" }
+        Write-Host "[$label] Playwright: $($pwBatch.Name) (timeout 10 min)..." -ForegroundColor Yellow
+        $playwrightExitFile = Join-Path $logDir "playwright_$batchIdx.exit"
+        if (Test-Path $playwrightExitFile) { Remove-Item $playwrightExitFile -Force }
+        $playwrightJob = Start-Job -ScriptBlock {
+            param($Dir, $ExitFile, $PathsStr)
+            Set-Location $Dir
+            npx playwright install --with-deps chromium 2>$null
+            $paths = $PathsStr -split '\s+' | Where-Object { $_ }
+            if ($paths) { npx playwright test --project=chromium $paths 2>&1 } else { npx playwright test --project=chromium 2>&1 }
+            $code = $LASTEXITCODE
+            try { [System.IO.File]::WriteAllText($ExitFile, $code) } catch {}
+            exit $code
+        } -ArgumentList $CI_PLAYWRIGHT_DIR, $playwrightExitFile, $pwBatch.Paths
+        Wait-Job -Job $playwrightJob -Timeout $playwrightTimeout | Out-Null
+        $ec = 1
+        if ($playwrightJob.State -eq "Completed" -and (Test-Path $playwrightExitFile)) { $ec = [int](Get-Content $playwrightExitFile -Raw) }
+        elseif ($playwrightJob.State -ne "Completed") { Write-Host "  [$($pwBatch.Name)] TIMEOUT or RUNNING" -ForegroundColor Red }
+        $status = if ($ec -eq 0) { "PASS" } else { "FAIL" }; $color = if ($ec -eq 0) { "Green" } else { "Red" }
+        Write-Host "  [$($pwBatch.Name)] $status" -ForegroundColor $color
+        Remove-Job -Job $playwrightJob -Force -ErrorAction SilentlyContinue
+        if ($ec -ne 0) {
+            "Local CI: Playwright ($label) failed." | Set-Content (Join-Path $logDir "LATEST_FAILURE.md") -Encoding UTF8
+            docker compose -f $CI_COMPOSE_FILE down 2>$null; exit 1
+        }
     }
 }
 

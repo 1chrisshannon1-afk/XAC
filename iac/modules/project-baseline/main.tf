@@ -142,5 +142,5 @@ module "monitoring" {
   error_rate_threshold_pct  = var.error_rate_threshold_pct
   latency_p95_threshold_ms  = var.latency_p95_threshold_ms
   min_instances             = each.value.min_instances
-  runbook_base_url          = var.runbook_base_url != "" ? var.runbook_base_url : "https://github.com/1chrisshannon1-afk/ContractorScopeAI/blob/main/_XAC/monitoring/runbooks"
+  runbook_base_url          = var.runbook_base_url
 }

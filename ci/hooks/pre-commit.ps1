@@ -44,6 +44,11 @@ function Report-Check {
 
 # Load project config for compile targets and ruff excludes
 $configPath = Join-Path $PSScriptRoot "..\..\..\.ci\config.ps1"
+# When run from source (_XAC/ci/hooks/): go up 3 levels to repo root
+# When run from .git/hooks/ (installed): $PSScriptRoot is .git/hooks, go up 2 levels
+if (-not (Test-Path $configPath)) {
+    $configPath = Join-Path $PSScriptRoot "..\..\.ci\config.ps1"
+}
 if (Test-Path $configPath) { . $configPath }
 
 $compileDirs = if ($CI_COMPILEALL_TARGETS) { $CI_COMPILEALL_TARGETS } else { @("modules", "entrypoint_backend\backend") }

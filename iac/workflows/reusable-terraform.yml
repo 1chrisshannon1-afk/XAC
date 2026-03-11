@@ -14,6 +14,10 @@ on:
       environment:
         type: string
         description: "Environment name (e.g. staging)"
+      policies-path:
+        type: string
+        default: "_XAC/iac/policies"
+        description: "Path to OPA policies directory relative to repo root (default: _XAC/iac/policies)"
     secrets:
       GOOGLE_CREDENTIALS:
         optional: true
@@ -65,8 +69,7 @@ jobs:
           sudo mv opa /usr/local/bin/
       - name: Run OPA policies
         run: |
-          # Policies live in _XAC/iac/policies; from project-path (e.g. _XAC_Config_ContractorScope_/iac) go to repo root then _XAC/iac/policies
-          POLICIES_DIR="${{ inputs.project-path }}/../../_XAC/iac/policies"
+          POLICIES_DIR="${{ github.workspace }}/${{ inputs.policies-path }}"
           if [ ! -d "$POLICIES_DIR" ]; then
             echo "::error::OPA policies not found at $POLICIES_DIR"
             exit 1
