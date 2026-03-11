@@ -1,6 +1,6 @@
 # _XAC
 
-Cross-project XAC (CI, IaC, monitoring, docs). Shared content used by all projects. Project-specific config lives in `_XAC_Config_ContractorScope_/` (or similar).
+Cross-project XAC (CI, IaC, monitoring, docs). Shared content used by all projects. Project-specific config lives in `_XAC_Config/` (or similar).
 
 ## Layout
 
@@ -25,7 +25,7 @@ Cross-project XAC (CI, IaC, monitoring, docs). Shared content used by all projec
 
 2. **Option B — Sibling XAC:** Clone [XAC](https://github.com/1chrisshannon1-afk/XAC) as a sibling; point `$CI_SHARED_PATH` at that clone (or use `.ci/bootstrap-helper.ps1`).
 
-3. **Terraform:** Project IaC (e.g. `_XAC_Config_ContractorScope_/iac`) uses `source = "../../_XAC/iac/modules/project-baseline"`. Run `terraform init` and `terraform plan` from the project iac dir.
+3. **Terraform:** Project IaC (e.g. `_XAC_Config/iac`) uses `source = "../../_XAC_Base/iac/modules/project-baseline"`. Run `terraform init` and `terraform plan` from the project iac dir.
 
 4. **Verify setup:** `.\_XAC\ci\scripts\verify-setup.ps1`
 
@@ -38,7 +38,7 @@ To publish _XAC to the XAC GitHub repo, see **docs/PUBLISH_TO_XAC.md**.
 
 - **Monitoring:** The **project-baseline** module composes **cloud-monitoring** per service: dashboards (from `monitoring/dashboards/cloud-run-baseline.json`), alert policies (error rate, latency, instance anomaly), and runbook links. Alert documentation uses **runbook_base_url** (set in project config or left empty to use this repo’s `_XAC/monitoring/runbooks`).
 - **Runbooks:** Live in **monitoring/runbooks/** (HIGH_ERROR_RATE, HIGH_LATENCY, DEPLOYMENT_FAILED, COST_SPIKE, INSTANCE_ANOMALY). Linked from alert policies when `runbook_base_url` is set (e.g. GitHub URL to this path).
-- **Policies:** OPA Rego in **iac/policies/** (require-labels, cloud-run-health-check, no-plain-env-secrets). Used by **iac/workflows/reusable-terraform.yml** when running Terraform from a project path (e.g. `_XAC_Config_ContractorScope_/iac`).
+- **Policies:** OPA Rego in **iac/policies/** (require-labels, cloud-run-health-check, no-plain-env-secrets). Used by **iac/workflows/reusable-terraform.yml** when running Terraform from a project path (e.g. `_XAC_Config/iac`).
 - **Workflows:** **iac/workflows/reusable-terraform.yml** is the standard for Terraform + OPA. Call it with `project-path` pointing to your project’s Terraform dir.
 
 

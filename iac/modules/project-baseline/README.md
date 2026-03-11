@@ -18,4 +18,4 @@ See variables.tf. Grouped: Identity, GitHub, Services, Artifact Registry, Networ
 
 ## Example
 
-See `terraform/projects/contractorscope-ai/main.tf`.
+See `terraform/projects/<project-id>/main.tf`.

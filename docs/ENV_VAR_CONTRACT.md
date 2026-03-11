@@ -13,7 +13,7 @@ Standard environment variables every service must support so local, test, stagin
 | `FIRESTORE_EMULATOR_HOST` | `host:port` | Points to local emulator |
 | `REDIS_URL` | `redis://host:port/db` | Redis connection |
 
-Project-specific variables must be prefixed with the project abbreviation (e.g. `CSA_` for ContractorScope) to avoid collisions when multiple projects run in the same environment.
+Project-specific variables must be prefixed with the project abbreviation (e.g. `ACME_` for Acme Corp) to avoid collisions when multiple projects run in the same environment.
 
 ---
 
@@ -22,4 +22,4 @@ Project-specific variables must be prefixed with the project abbreviation (e.g. 
 1. Read these variables at startup and document any project-specific prefixes in your README or runbook.
 2. Use `APP_ENV` to gate feature flags, logging level, and external service endpoints.
 3. Use `SKIP_AUTH` only in test/local; never enable in staging or production.
-4. When adding new env vars, prefer the project prefix (e.g. `CSA_*`) for anything not shared across all services.
+4. When adding new env vars, prefer the project prefix (e.g. `ACME_*`) for anything not shared across all services.

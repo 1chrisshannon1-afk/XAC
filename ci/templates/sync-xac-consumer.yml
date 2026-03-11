@@ -1,20 +1,20 @@
 # CONSUMER: Copy to your repo as .github/workflows/sync-xac.yml
-# Source: XAC repo ci/templates/sync-xac-consumer.yml
+# Source: _XAC_Base repo ci/templates/sync-xac-consumer.yml
 
 # Triggered automatically by XAC's notify-consumers.yml workflow.
 # Can also be triggered manually from Actions tab.
 #
 # What it does:
-#   1. Pulls latest XAC into _XAC/ via git subtree
+#   1. Pulls latest XAC into _XAC_Base/ via git subtree
 #   2. Opens a PR so changes can be reviewed before merge
-#   3. PR description shows what changed in _XAC/
+#   3. PR description shows what changed in _XAC_Base/
 #
-# When _XAC is still in-repo (not yet a subtree): workflow will detect
+# When _XAC_Base is still in-repo (not yet a subtree): workflow will detect
 # no subtree and run "Initial subtree add", then open the PR. After you
-# remove the in-repo _XAC and merge that PR (or add subtree yourself),
+# remove the in-repo _XAC_Base and merge that PR (or add subtree yourself),
 # future runs will do subtree pull and open sync PRs.
 
-name: Sync _XAC
+name: Sync _XAC_Base
 
 on:
   workflow_dispatch:
@@ -51,10 +51,10 @@ jobs:
           git config user.name  "xac-sync-bot"
           git config user.email "xac-sync@users.noreply.github.com"
 
-      - name: Check if _XAC subtree exists
+      - name: Check if _XAC_Base subtree exists
         id: check
         run: |
-          if git log --oneline --all | grep -q "git-subtree-dir: _XAC"; then
+          if git log --oneline --all | grep -q "git-subtree-dir: _XAC_Base"; then
             echo "exists=true" >> $GITHUB_OUTPUT
           else
             echo "exists=false" >> $GITHUB_OUTPUT
@@ -64,32 +64,32 @@ jobs:
         if: steps.check.outputs.exists == 'true'
         run: |
           git subtree pull \
-            --prefix=_XAC \
+            --prefix=_XAC_Base \
             https://github.com/1chrisshannon1-afk/XAC.git \
             ${{ inputs.xac_ref }} --squash \
-            -m "chore: sync _XAC to ${{ inputs.xac_ref }}"
+            -m "chore: sync _XAC_Base to ${{ inputs.xac_ref }}"
 
       - name: Initial subtree add (first time only)
         if: steps.check.outputs.exists == 'false'
         run: |
-          if [ -d "_XAC" ]; then
-            echo "::error::_XAC/ exists as a regular directory but is not a subtree."
+          if [ -d "_XAC_Base" ]; then
+            echo "::error::_XAC_Base/ exists as a regular directory but is not a subtree."
             echo "::error::Remove or rename it first, then re-run this workflow."
             exit 1
           fi
           git subtree add \
-            --prefix=_XAC \
+            --prefix=_XAC_Base \
             https://github.com/1chrisshannon1-afk/XAC.git \
             ${{ inputs.xac_ref }} --squash \
-            -m "chore: add _XAC as git subtree (${{ inputs.xac_ref }})"
+            -m "chore: add _XAC_Base as git subtree (${{ inputs.xac_ref }})"
 
       - name: Get XAC changelog
         id: changelog
         run: |
           # Fetch the XAC log since the last sync
-          LAST_SYNC=$(git log --oneline --all | grep "git-subtree-dir: _XAC" | head -1 | awk '{print $1}')
+          LAST_SYNC=$(git log --oneline --all | grep "git-subtree-dir: _XAC_Base" | head -1 | awk '{print $1}')
           if [ -n "$LAST_SYNC" ]; then
-            CHANGES=$(git -C _XAC log --oneline HEAD~5..HEAD 2>/dev/null || echo "See XAC repo for changes")
+            CHANGES=$(git -C _XAC_Base log --oneline HEAD~5..HEAD 2>/dev/null || echo "See XAC repo for changes")
           else
             CHANGES="Initial sync"
           fi
@@ -101,29 +101,29 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh label create "xac-sync" --color "0075ca" --description "Automated _XAC sync PR" 2>/dev/null || true
+          gh label create "xac-sync" --color "0075ca" --description "Automated _XAC_Base sync PR" 2>/dev/null || true
 
       - name: Push sync branch and open PR
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_BODY: |
-            ## _XAC Sync
+            ## _XAC_Base Sync
 
             **Triggered by:** ${{ inputs.triggered_by }}
             **XAC ref:** ${{ inputs.xac_ref }}
 
-            ### What changed in _XAC/
+            ### What changed in _XAC_Base/
             ${{ steps.changelog.outputs.changes }}
 
             ### Review checklist
-            - [ ] Check `_XAC/ci/local_ci/core.ps1` for changes that affect local CI behavior
-            - [ ] Check `_XAC/iac/modules/` for changes that require `terraform init` rerun
-            - [ ] Check `_XAC/cursor/` for updated agent rules
-            - [ ] Run `.\local_ci.ps1` locally after merging to verify CI still passes
+            - [ ] Check `_XAC_Base/ci/local_ci/core.ps1` for changes that affect local CI behavior
+            - [ ] Check `_XAC_Base/iac/modules/` for changes that require `terraform init` rerun
+            - [ ] Check `_XAC_Base/cursor/` for updated agent rules
+            - [ ] Run `_XAC_Config\ci\local_ci.ps1` locally after merging to verify CI still passes
 
             ### How to merge
-            Review the diff in `_XAC/`, then merge this PR.
-            After merging, run `.\local_ci.ps1` to confirm everything works with the new XAC version.
+            Review the diff in `_XAC_Base/`, then merge this PR.
+            After merging, run `_XAC_Config\ci\local_ci.ps1` to confirm everything works with the new XAC version.
 
             ---
             *Automated sync by [XAC](https://github.com/1chrisshannon1-afk/XAC)*
@@ -133,7 +133,7 @@ jobs:
           git push origin "$BRANCH"
 
           gh pr create \
-            --title "chore: sync _XAC to ${{ inputs.xac_ref }}" \
+            --title "chore: sync _XAC_Base to ${{ inputs.xac_ref }}" \
             --body "$PR_BODY" \
             --label "xac-sync" \
             --base "${{ inputs.target_branch }}"

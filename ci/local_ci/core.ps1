@@ -1,6 +1,6 @@
 # Shared CI core engine. Called by each project's local_ci.ps1 after loading .ci/config.ps1. Do not run directly.
 # Steps 1-4: containers, Python deps, static checks, parallel unit tests.
-# Step 5: nine batches 5a-5d integration, 5e Playwright, 5f-5i Node/frontend, each with its own timeout.
+# Step 5: dynamic batches — integration, Playwright (multi-suite), Node/frontend — count driven by config.
 
 $ErrorActionPreference = "Continue"
 if (-not $ROOT) { $ROOT = $PWD.Path }
@@ -24,8 +24,9 @@ Set-Location $ROOT
 # $CI_INTEGRATION_PYTEST_FLAGS — full pytest flag string for integration tests
 # $CI_UNIT_TEST_SETS         — array of hashtables: @{Name="..."; Paths="..."}
 # $CI_INTEGRATION_BATCHES    — array of hashtables: @{Name="..."; Paths="..."}
-# $CI_PLAYWRIGHT_DIR         — path to run playwright from (or $null to skip)
-# $CI_PLAYWRIGHT_BATCHES     — optional array of @{Name="..."; Paths="..."}; each batch timeout 10 min
+# $CI_PLAYWRIGHT_DIR         — (legacy) single Playwright dir, used when $CI_PLAYWRIGHT_SUITES is not set
+# $CI_PLAYWRIGHT_BATCHES     — (legacy) batches for single-dir Playwright
+# $CI_PLAYWRIGHT_SUITES      — (preferred) array of @{Name="..."; Dir="..."; Batches=@(@{Name="..."; Paths="..."},...)})
 # $CI_NODE_JOBS              — array of hashtables: @{Name="..."; Dir="..."; Steps=@("lint","build","test")}
 
 $logDir = Join-Path $ROOT "ci_logs"
@@ -115,7 +116,7 @@ Write-Host "  Containers are up and healthy." -ForegroundColor Green
 $requiredPy = if ($CI_PYTHON_VERSION) { $CI_PYTHON_VERSION } else { "3.11" }
 $pyVer = (python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>$null)
 $PY = "python"
-$pyMatch = "^$($requiredPy -replace ''\.'',''\.'')$"
+$pyMatch = "^$($requiredPy -replace '\.', '\.')$"
 if ($pyVer -and ($pyVer -notmatch $pyMatch)) {
     $pyPath = (py "-$requiredPy" -c "import sys; print(sys.executable)" 2>$null)
     if ($pyPath -and (Test-Path $pyPath.Trim())) {

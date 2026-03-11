@@ -1,0 +1,4 @@
+# {{PROJECT_NAME}} — Project-Specific .cursorignore Additions
+# Layer on top of _XAC_Base/cursor/cursorignore.base
+
+# Add project-specific large data, logs, uploads, credentials below.

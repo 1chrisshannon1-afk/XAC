@@ -5,7 +5,7 @@
     Hosted in the XAC repo. Do not copy into consumer repos.
     One command: irm https://raw.githubusercontent.com/1chrisshannon1-afk/XAC/main/scripts/onboard-xac.ps1 | iex
     Downloads .github/workflows/sync-xac.yml from XAC, creates .ci/config.ps1 (thin wrapper),
-    creates _XAC_Config_<Project>/ with all template files. local_ci.ps1 at root is a stub that calls _XAC/ci/local_ci.ps1.
+    creates _XAC_Config/ with all template files. Local CI entry point: _XAC_Config/ci/local_ci.ps1 (delegates to _XAC_Base).
 .EXAMPLE
     irm https://raw.githubusercontent.com/1chrisshannon1-afk/XAC/main/scripts/onboard-xac.ps1 | iex
 #>
@@ -33,7 +33,7 @@ $ProjectName = Read-Host "Project name (e.g. Acme Corp)"
 if (-not $ProjectName) { Write-Host "Project name is required." -ForegroundColor Red; exit 1 }
 
 $Sanitized = ($ProjectName -replace '[^a-zA-Z0-9]', '') -replace '^$', 'Project'
-$DefaultConfigFolder = "_XAC_Config_${Sanitized}_"
+$DefaultConfigFolder = "_XAC_Config"
 $ConfigFolderName = Read-Host "Config folder name [${DefaultConfigFolder}]"
 if (-not $ConfigFolderName) { $ConfigFolderName = $DefaultConfigFolder }
 
@@ -66,8 +66,8 @@ $V = @{
     XAC_REPO_RAW    = $XAC_REPO_RAW
 }
 
-# ── 1. Download Sync _XAC workflow ────────────────────────────────────────────
-Write-Host "[1/4] Downloading Sync _XAC workflow..." -ForegroundColor Yellow
+# ── 1. Download Sync _XAC_Base workflow ────────────────────────────────────────
+Write-Host "[1/5] Downloading Sync _XAC_Base workflow..." -ForegroundColor Yellow
 $workflowUrl = "$XAC_REPO_RAW/ci/templates/sync-xac-consumer.yml"
 $workflowDir = Join-Path $ROOT ".github\workflows"
 $workflowPath = Join-Path $workflowDir "sync-xac.yml"
@@ -80,8 +80,120 @@ try {
 }
 Write-Host "  OK  .github/workflows/sync-xac.yml" -ForegroundColor Green
 
-# ── 2. Create .ci/config.ps1 thin wrapper ──────────────────────────────────────
-Write-Host "[2/4] Creating .ci/config.ps1..." -ForegroundColor Yellow
+# ── 2. Create xac-ci.yml workflow ──────────────────────────────────────────────
+Write-Host "[2/5] Creating .github/workflows/xac-ci.yml..." -ForegroundColor Yellow
+$xacCiYml = @"
+# {{PROJECT_NAME}} — CI + Deploy Pipeline
+# Single workflow: CI on all branches, deploy on staging push.
+# All jobs delegate to XAC reusable workflows.
+name: XAC CI
+
+on:
+  push:
+    branches: [main, develop, staging]
+  pull_request:
+    branches: [main, develop, staging]
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "Reason (optional)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  id-token: write
+  security-events: write
+
+concurrency:
+  group: xac-ci-`${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  preflight:
+    uses: 1chrisshannon1-afk/XAC/.github/workflows/reusable-preflight.yml@main
+
+  static-checks:
+    needs: preflight
+    uses: 1chrisshannon1-afk/XAC/.github/workflows/reusable-static-checks.yml@main
+    with:
+      compileall-targets: "."
+      ruff-excludes: "_archive/**,_ARCHIVE/**,_XAC_Base/**,{{XAC_CONFIG_NAME}}/**"
+      mypy-target: ""
+      mypy-blocking: false
+
+  tests:
+    needs: preflight
+    uses: 1chrisshannon1-afk/XAC/.github/workflows/reusable-python-tests.yml@main
+    with:
+      unit-test-matrix: "[{`"set_name`":`"unit`",`"test_paths`":`".`"}]"
+      integration-test-matrix: "[{`"batch_name`":`"integration`",`"test_paths`":`".`"}]"
+      pythonpath-extra: ""
+      gcp-test-project: "{{GCP_PROJECT}}-test"
+
+  build:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/staging'
+    needs: [static-checks, tests]
+    uses: 1chrisshannon1-afk/XAC/.github/workflows/reusable-build-push.yml@main
+    with:
+      project-id: {{GCP_PROJECT}}
+      repo-name: {{PROJECT_LABEL}}-apps
+      service-name: {{PROJECT_LABEL}}-backend-staging
+      dockerfile: Dockerfile
+    secrets: inherit
+
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/staging'
+    needs: build
+    uses: 1chrisshannon1-afk/XAC/.github/workflows/reusable-deploy-canary.yml@main
+    with:
+      project-id: {{GCP_PROJECT}}
+      service-name: {{PROJECT_LABEL}}-backend-staging
+      image-uri: `${{ needs.build.outputs.image-uri }}
+      revision-suffix: `${{ github.sha }}
+      environment: staging
+    secrets: inherit
+
+  smoke:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/staging'
+    needs: deploy
+    uses: 1chrisshannon1-afk/XAC/.github/workflows/reusable-smoke-tests.yml@main
+    with:
+      revision-url: `${{ needs.deploy.outputs.revision-url }}
+      health-endpoint: /health
+
+  traffic:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/staging'
+    needs: [deploy, smoke]
+    uses: 1chrisshannon1-afk/XAC/.github/workflows/reusable-traffic-shift.yml@main
+    with:
+      project-id: {{GCP_PROJECT}}
+      service-name: {{PROJECT_LABEL}}-backend-staging
+      revision-name: `${{ needs.deploy.outputs.revision-name }}
+      canary-bake-minutes: 5
+      environment: staging
+    secrets: inherit
+
+  rollback:
+    if: failure() && needs.deploy.result == 'success'
+    needs: [deploy, smoke, traffic]
+    uses: 1chrisshannon1-afk/XAC/.github/workflows/reusable-rollback.yml@main
+    with:
+      project-id: {{GCP_PROJECT}}
+      service-name: {{PROJECT_LABEL}}-backend-staging
+      failed-revision: `${{ needs.deploy.outputs.revision-name }}
+      reason: "Post-deploy validation failed"
+    secrets: inherit
+"@
+$xacCiPath = Join-Path $workflowDir "xac-ci.yml"
+Set-Content -Path $xacCiPath -Value (Set-Placeholders $xacCiYml $V)
+Write-Host "  OK  .github/workflows/xac-ci.yml" -ForegroundColor Green
+
+# ── 3. Create .ci/config.ps1 thin wrapper ──────────────────────────────────────
+Write-Host "[3/5] Creating .ci/config.ps1..." -ForegroundColor Yellow
 $ciDir = Join-Path $ROOT ".ci"
 if (-not (Test-Path $ciDir)) { New-Item -ItemType Directory -Path $ciDir -Force | Out-Null }
 $ciWrapper = @"
@@ -94,8 +206,8 @@ if (Test-Path `$_canonical) { . `$_canonical } else { Write-Host "ERROR: Config 
 Set-Content -Path (Join-Path $ciDir "config.ps1") -Value $ciWrapper
 Write-Host "  OK  .ci/config.ps1" -ForegroundColor Green
 
-# ── 3. Create _XAC_Config_* folder and all files ───────────────────────────────
-Write-Host "[3/4] Creating $ConfigFolderName with ci, cursor, docker, iac, cicd, briefs..." -ForegroundColor Yellow
+# ── 4. Create _XAC_Config_* folder and all files ───────────────────────────────
+Write-Host "[4/5] Creating $ConfigFolderName with ci, cursor, docker, iac, cicd, briefs..." -ForegroundColor Yellow
 $cfgRoot = Join-Path $ROOT $ConfigFolderName
 $null = New-Item -ItemType Directory -Path $cfgRoot -Force
 
@@ -120,7 +232,7 @@ $CI_PYTHONPATH_EXTRA = @()
 $CI_CATALOG_DIR      = $null
 $CI_CATALOG_COMPILE_CMD = $null
 $CI_COMPILEALL_TARGETS = @(".")
-$CI_RUFF_EXCLUDES = @("_archive/**", "_ARCHIVE/**", "_XAC/**", "{{XAC_CONFIG_NAME}}/**")
+$CI_RUFF_EXCLUDES = @("_archive/**", "_ARCHIVE/**", "_XAC_Base/**", "{{XAC_CONFIG_NAME}}/**")
 $CI_MYPY_TARGET = $null
 $CI_MYPY_BLOCKING = $false
 $CI_UNIT_TEST_SETS = @(@{ Name = "unit_tests"; Paths = "." })
@@ -133,9 +245,9 @@ $CI_INTEGRATION_PYTEST_FLAGS = '-v --tb=short --maxfail=20'
 '@
 
 $localCiPs1 = @'
-# Stub: real local CI lives in _XAC. Run from repo root: .\local_ci.ps1
+# Entry point: delegates to _XAC_Base. Run from repo root: _XAC_Config\ci\local_ci.ps1
 $repoRoot = (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent)
-& (Join-Path $repoRoot "_XAC\ci\local_ci.ps1")
+& (Join-Path $repoRoot "_XAC_Base\ci\local_ci.ps1")
 '@
 
 $deployYml = @'
@@ -162,7 +274,7 @@ jobs:
     uses: 1chrisshannon1-afk/XAC/.github/workflows/reusable-static-checks.yml@main
     with:
       compileall-targets: "."
-      ruff-excludes: "_archive/**,_ARCHIVE/**,_XAC/**,{{XAC_CONFIG_NAME}}/**"
+      ruff-excludes: "_archive/**,_ARCHIVE/**,_XAC_Base/**,{{XAC_CONFIG_NAME}}/**"
       mypy-target: ""
       mypy-blocking: false
   tests:
@@ -220,17 +332,17 @@ jobs:
     secrets: inherit
 '@
 
-$cursorrules = "# {{PROJECT_NAME}} — Project rules`n- **Project ID:** {{GCP_PROJECT}}`n- Edit paths and deploy commands. See _XAC/cursor/README.md.`n"
+$cursorrules = "# {{PROJECT_NAME}} — Project rules`n- **Project ID:** {{GCP_PROJECT}}`n- Edit paths and deploy commands. See _XAC_Base/cursor/README.md.`n"
 $cursorignore = "# {{PROJECT_NAME}} — Add paths to ignore (logs, uploads, etc.)`n"
 $configReadme = @'
 # {{XAC_CONFIG_NAME}}
-Project config for {{PROJECT_NAME}}. Shared platform: _XAC/.
+Project config for {{PROJECT_NAME}}. Shared platform: _XAC_Base/.
 Edit: ci/config.ps1, cursor/*.project, iac/, ci/deploy-staging-shared.yml. Add Dockerfiles in docker/.
 '@
 
 $iacMain = @'
 module "staging" {
-  source = "../../_XAC/iac/modules/project-baseline"
+  source = "../../_XAC_Base/iac/modules/project-baseline"
   project_id   = var.project_id
   project_name = "{{GCP_PROJECT}}"
   company      = "{{PROJECT_LABEL}}"
@@ -263,12 +375,12 @@ module "staging" {
 }
 '@
 
-$iacVars = "variable `"project_id`" { type = string default = `"{{GCP_PROJECT}}`" }`nvariable `"region`" { type = string default = `"{{GCP_REGION}}`" }`nvariable `"billing_account_id`" { type = string }`nvariable `"alert_email_addresses`" { type = list(string) }`nvariable `"slack_webhook_url`" { type = string default = `"`" }`nvariable `"runbook_base_url`" { type = string default = `"https://github.com/{{GITHUB_ORG}}/{{GITHUB_REPO}}/blob/main/_XAC/monitoring/runbooks`" }`n"
+$iacVars = "variable `"project_id`" { type = string default = `"{{GCP_PROJECT}}`" }`nvariable `"region`" { type = string default = `"{{GCP_REGION}}`" }`nvariable `"billing_account_id`" { type = string }`nvariable `"alert_email_addresses`" { type = list(string) }`nvariable `"slack_webhook_url`" { type = string default = `"`" }`nvariable `"runbook_base_url`" { type = string default = `"https://github.com/{{GITHUB_ORG}}/{{GITHUB_REPO}}/blob/main/_XAC_Base/monitoring/runbooks`" }`n"
 $iacBackend = "terraform { backend `"gcs`" { bucket = `"{{GCP_PROJECT}}-terraform-state`"; prefix = `"terraform/state`" } }`n"
 $iacOutputs = "output `"wif_provider`" { value = module.staging.wif_provider }`noutput `"ci_service_account`" { value = module.staging.ci_service_account }`noutput `"artifact_registry_url`" { value = module.staging.artifact_registry_url }`noutput `"service_urls`" { value = module.staging.service_urls }`n"
 $iacTfvarsExample = "project_id = `"{{GCP_PROJECT}}`"`nregion = `"{{GCP_REGION}}`"`nbilling_account_id = `"REPLACE`"`nalert_email_addresses = [`"devops@example.com`"]`nslack_webhook_url = `"`"`nrunbook_base_url = `"`"`n"
-$cicdReadme = "# CI/CD — {{PROJECT_NAME}}`nSee MANIFEST.md. Hooks: _XAC/ci/hooks/install.ps1`n"
-$cicdManifest = "| Path | Purpose |`n|------|---------|`n| {{XAC_CONFIG_NAME}}/ci/config.ps1 | Master config |`n| .github/workflows/sync-xac.yml | Sync _XAC |`n| _XAC/ci/hooks/ | Pre-commit, pre-push |`n"
+$cicdReadme = "# CI/CD — {{PROJECT_NAME}}`nSee MANIFEST.md. Hooks: _XAC_Base/ci/hooks/install.ps1`n"
+$cicdManifest = "| Path | Purpose |`n|------|---------|`n| {{XAC_CONFIG_NAME}}/ci/config.ps1 | Master config |`n| .github/workflows/sync-xac.yml | Sync _XAC_Base |`n| _XAC_Base/ci/hooks/ | Pre-commit, pre-push |`n"
 
 foreach ($pair in @(
     @{ Path = "README.md"; Content = (Set-Placeholders $configReadme $V) },
@@ -286,7 +398,7 @@ foreach ($pair in @(
     @{ Path = "iac\terraform.tfvars.example"; Content = (Set-Placeholders $iacTfvarsExample $V) },
     @{ Path = "cicd\README.md"; Content = (Set-Placeholders $cicdReadme $V) },
     @{ Path = "cicd\MANIFEST.md"; Content = (Set-Placeholders $cicdManifest $V) },
-    @{ Path = "cicd\docs\COMMIT_PUSH_DEPLOY.md"; Content = "See _XAC/docs/. Push to staging to deploy.`n" },
+    @{ Path = "cicd\docs\COMMIT_PUSH_DEPLOY.md"; Content = "See _XAC_Base/docs/. Push to staging to deploy.`n" },
     @{ Path = "briefs\README.md"; Content = "Add agent briefs here.`n" }
 )) {
     $fullPath = Join-Path $cfgRoot $pair.Path
@@ -295,14 +407,6 @@ foreach ($pair in @(
     Set-Content -Path $fullPath -Value $pair.Content
 }
 Write-Host "  OK  $ConfigFolderName/" -ForegroundColor Green
-
-# ── 4. Root local_ci.ps1 (stub: calls _XAC) ────────────────────────────────────
-Write-Host "[4/4] Creating root local_ci.ps1 stub..." -ForegroundColor Yellow
-$rootLocalCi = Join-Path $ROOT "local_ci.ps1"
-# Canonical local CI lives in _XAC/ci/local_ci.ps1; root is just a one-line stub
-$stub = "& (Join-Path `$PSScriptRoot '_XAC\ci\local_ci.ps1')"
-Set-Content -Path $rootLocalCi -Value $stub
-Write-Host "  OK  local_ci.ps1 (stub -> _XAC)" -ForegroundColor Green
 
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Green
@@ -313,6 +417,6 @@ Write-Host "Next steps:" -ForegroundColor Cyan
 Write-Host "  1. Edit $ConfigFolderName/ci/config.ps1 — paths, test sets, GCP." -ForegroundColor White
 Write-Host "  2. Edit $ConfigFolderName/iac/ — services, secrets, terraform.tfvars." -ForegroundColor White
 Write-Host "  3. Edit $ConfigFolderName/cursor/*.project for your project." -ForegroundColor White
-Write-Host "  4. Add _XAC: run Actions -> Sync _XAC, or: git subtree add --prefix=_XAC https://github.com/1chrisshannon1-afk/XAC.git main --squash" -ForegroundColor White
-Write-Host "  5. Assemble .cursorrules/.cursorignore (see _XAC/cursor/README.md). Add Dockerfiles in $ConfigFolderName/docker/." -ForegroundColor White
+Write-Host "  4. Add _XAC_Base: run Actions -> Sync _XAC_Base, or: git subtree add --prefix=_XAC_Base https://github.com/1chrisshannon1-afk/XAC.git main --squash" -ForegroundColor White
+Write-Host "  5. Assemble .cursorrules/.cursorignore (see _XAC_Base/cursor/README.md). Add Dockerfiles in $ConfigFolderName/docker/." -ForegroundColor White
 Write-Host ""

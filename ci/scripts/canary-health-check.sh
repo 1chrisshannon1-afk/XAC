@@ -2,8 +2,8 @@
 # Canary health check: loop for DURATION_SECONDS, check /health every 30s.
 # Optionally uses Cloud Monitoring for error rate; falls back to HTTP-only if metrics unavailable.
 # Usage: ./scripts/canary-health-check.sh PROJECT_ID SERVICE_NAME REVISION THRESHOLD_PCT DURATION_SECONDS
-# Example: ./scripts/canary-health-check.sh contractorscope-ai backend abc1234 1 1200
-#   Project contractorscope-ai, service backend, revision abc1234, fail if error rate > 1%, run 1200 seconds (20 min).
+# Example: ./scripts/canary-health-check.sh my-project backend abc1234 1 1200
+#   Project my-project, service backend, revision abc1234, fail if error rate > 1%, run 1200 seconds (20 min).
 # Runnable locally for debugging; all GCP interaction via gcloud CLI only.
 set -euo pipefail
 

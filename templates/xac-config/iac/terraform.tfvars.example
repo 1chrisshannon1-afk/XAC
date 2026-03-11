@@ -1,0 +1,7 @@
+# Copy to terraform.tfvars and fill in real values. Do not commit terraform.tfvars.
+
+project_id             = "{{GCP_PROJECT}}"
+region                 = "{{GCP_REGION}}"
+billing_account_id     = "REPLACE_WITH_BILLING_ACCOUNT_ID"
+alert_email_addresses  = ["devops@example.com"]
+slack_webhook_url      = ""

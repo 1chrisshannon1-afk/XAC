@@ -11,9 +11,10 @@ $ErrorActionPreference = "Stop"
 
 if (-not $ROOT) { $ROOT = $PWD.Path }
 $XacPath = Join-Path $ROOT "_XAC"
+$XacBasePath = Join-Path $ROOT "_XAC_Base"
 $ParentDir = Split-Path $ROOT -Parent
 $XacClonePath = Join-Path $ParentDir "XAC"
-$SharedPath = if (Test-Path $XacPath) { $XacPath } elseif (Test-Path $XacClonePath) { $XacClonePath } else { $null }
+$SharedPath = if (Test-Path $XacPath) { $XacPath } elseif (Test-Path $XacBasePath) { $XacBasePath } elseif (Test-Path $XacClonePath) { $XacClonePath } else { $null }
 
 if (-not (Test-Path $SharedPath)) {
     if ($SharedPath -eq $XacPath) {
@@ -56,4 +57,4 @@ $CI_SHARED_PATH = if ($SharedPath -and $coreInCi) {
 } else {
     $SharedPath
 }
-Set-Variable -Name CI_SHARED_PATH -Value $CI_SHARED_PATH -Scope 1
+Set-Variable -Name CI_SHARED_PATH -Value $CI_SHARED_PATH -Scope 0

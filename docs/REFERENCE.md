@@ -2,7 +2,7 @@
 
 **Last reviewed:** 2026-03-11
 
-Living reference for config variables, local CI behavior, and (when used) reusable workflow inputs/outputs. **Reference implementation:** ContractorScope AI (`.ci/config.ps1` at repo root, canonical source in `_XAC_Config_ContractorScope_/ci/config.ps1`).
+Living reference for config variables, local CI behavior, and (when used) reusable workflow inputs/outputs. **Reference implementation:** see your project's `_XAC_Config/ci/config.ps1`.
 
 ---
 
@@ -40,7 +40,7 @@ All project-specific values are set in `.ci/config.ps1` before `core.ps1` is dot
 - **Unit tests:** For each `$CI_UNIT_TEST_SETS` entry, `core.ps1` runs pytest with paths and `$CI_UNIT_PYTEST_FLAGS` (split on spaces and passed as arguments). No hardcoded flags — flags come only from config.
 - **Integration tests:** Same pattern using `$CI_INTEGRATION_BATCHES` and `$CI_INTEGRATION_PYTEST_FLAGS`.
 - **mypy:** Run once against `$CI_MYPY_TARGET`; **non-blocking** (continue-on-error) so local behavior matches CI.
-- **Bootstrap:** `core.ps1` does not call bootstrap; the project’s `local_ci.ps1` (or a thin `.ci/bootstrap-helper.ps1`) dot-sources `_XAC/ci/scripts/bootstrap.ps1` so `$CI_SHARED_PATH` is set before invoking `core.ps1`.
+- **Bootstrap:** `core.ps1` does not call bootstrap; the project’s `local_ci.ps1` (or a thin `.ci/bootstrap-helper.ps1`) dot-sources `_XAC_Base/ci/scripts/bootstrap.ps1` so `$CI_SHARED_PATH` is set before invoking `core.ps1`.
 
 ---
 

@@ -4,7 +4,7 @@ services:
   firestore-emulator:
     image: google/cloud-sdk:emulators
     command: >
-      bash -c "gcloud emulators firestore start --host-port=0.0.0.0:8086 --project=contractorscope-ai-test"
+      bash -c "gcloud emulators firestore start --host-port=0.0.0.0:8086 --project=ci-test-project"
     ports:
       - "8086:8086"
     healthcheck:

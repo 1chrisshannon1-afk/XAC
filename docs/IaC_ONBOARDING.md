@@ -42,10 +42,10 @@ Step-by-step guide to provision a new GCP project using _XAC Terraform modules. 
 ## Onboarding a new project
 
 1. **Copy the reference project as a template**  
-   Copy `_XAC_Config_ContractorScope_/iac/` or the equivalent project dir (e.g. `terraform/projects/contractorscope-ai/`) to a new project path and rename.
+   Copy `_XAC_Config/iac/` or the equivalent project dir (e.g. `terraform/projects/<project-id>/`) to a new project path and rename.
 
 2. **Edit `main.tf`**  
-   Replace all ContractorScope / contractorscope-ai values with the new project’s identity, GitHub repo, services, artifact registry repo ID, network CIDRs, billing, monitoring, and secrets. Use the same structure; only values change.
+   Replace all your project's values with the new project’s identity, GitHub repo, services, artifact registry repo ID, network CIDRs, billing, monitoring, and secrets. Use the same structure; only values change.
 
 3. **Edit `variables.tf` and `terraform.tfvars.example`**  
    Set `project_id`, `region`, `billing_account_id`, `alert_email_addresses`, and any other variables. Copy `terraform.tfvars.example` to `terraform.tfvars` and fill in real values (do not commit `terraform.tfvars`).

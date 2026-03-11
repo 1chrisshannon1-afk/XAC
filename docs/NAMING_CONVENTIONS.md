@@ -8,7 +8,7 @@ Standard naming for all XAC-consuming projects.
 |---------|------|----------|
 | `snake_case` | Python modules, test dirs, feature modules | `estimate_engine/`, `auth/`, `tests/` |
 | `UPPER_SNAKE` | Test categories, integration test groups | `API_CONTRACTS/`, `CROSS_MODULE_FLOWS/` |
-| `_PascalCase` or `_UPPER` | Special/infra folders (prefixed with `_`) | `_XAC/`, `_XAC_Config_ContractorScope_/`, `_archive/` |
+| `_PascalCase` or `_UPPER` | Special/infra folders (prefixed with `_`) | `_XAC_Base/`, `_XAC_Config/`, `_archive/` |
 | `kebab-case` | Frontend component folders (when React convention) | `shared-components/` |
 
 ## Files

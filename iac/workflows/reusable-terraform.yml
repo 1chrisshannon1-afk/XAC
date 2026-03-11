@@ -6,7 +6,7 @@ on:
     inputs:
       project-path:
         type: string
-        description: "Path within repo to the Terraform project dir (e.g. terraform/projects/contractorscope-ai)"
+        description: "Path within repo to the Terraform project dir (e.g. terraform/projects/<project-id>)"
       action:
         type: string
         default: "plan"
