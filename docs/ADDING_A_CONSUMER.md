@@ -21,26 +21,25 @@ The script prompts for: project name, config folder name, GCP project ID, GitHub
 
 ### 2. Edit variables in the config folder
 
-Edit only the generated config folder (no other setup):
+Open **`_XAC_Config/CUSTOMIZE.md`** (or your config folder name) for a step-by-step checklist. Then edit:
 
-- **ci/config.ps1** — paths, test sets, GCP key, Node jobs
+- **ci/config.ps1** — paths, test sets, GCP (see CUSTOMIZE.md)
 - **iac/** — Terraform services, secrets, `terraform.tfvars` (copy from `.example`)
 - **cursor/cursorrules.project**, **cursorignore.project** — project rules and ignores
-- **ci/deploy-staging-shared.yml** — service names, dockerfile path, test matrices if needed
-- **docker/** — add your Dockerfiles; point root `docker-compose` at them
+- **docker/** under _Config_Project — add your Dockerfiles; point root docker-compose at them
 
-### 3. Add _XAC to the repo
+### 3. Add _XAC_Base to the repo
 
-Either run **Actions -> Sync _XAC -> Run workflow** (it will add _XAC and open a PR), or:
+Either run **Actions → Sync _XAC_Base → Run workflow** (it will add _XAC_Base and open a PR), or:
 
 ```bash
-git subtree add --prefix=_XAC https://github.com/1chrisshannon1-afk/XAC.git main --squash -m "chore: add _XAC as git subtree"
+git subtree add --prefix=_XAC_Base https://github.com/1chrisshannon1-afk/XAC.git main --squash -m "chore: add _XAC_Base as git subtree"
 git push
 ```
 
 ### 4. Assemble .cursorrules and .cursorignore
 
-Follow _XAC/cursor/README.md to combine _XAC base + your config folder into root `.cursorrules` and `.cursorignore`.
+Follow _XAC_Base/cursor/README.md to combine _XAC_Base base + your config folder into root `.cursorrules` and `.cursorignore`.
 
 ---
 

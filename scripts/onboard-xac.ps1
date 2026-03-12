@@ -40,10 +40,29 @@ if (-not $ConfigFolderName) { $ConfigFolderName = $DefaultConfigFolder }
 $GcpProject = Read-Host "GCP project ID (e.g. acme-prod-123)"
 if (-not $GcpProject) { Write-Host "GCP project ID is required." -ForegroundColor Red; exit 1 }
 
-$GitHubOrg  = Read-Host "GitHub org (e.g. my-org)"
-$GitHubRepo = Read-Host "GitHub repo name (e.g. acme-backend)"
-$Region     = Read-Host "GCP region [us-central1]"
+# GitHub: accept URL or org + repo separately
+$GitHubInput = Read-Host "GitHub repo URL (e.g. https://github.com/my-org/my-repo) or press Enter to enter org/repo separately"
+if ($GitHubInput -match 'github\.com[/:]([^/]+)/([^/\s#?]+)') {
+    $GitHubOrg  = $Matches[1]
+    $GitHubRepo = $Matches[2] -replace '\.git$', ''
+    Write-Host "  Using org: $GitHubOrg, repo: $GitHubRepo" -ForegroundColor Gray
+} else {
+    $GitHubOrg  = Read-Host "GitHub org (e.g. my-org)"
+    $GitHubRepo = Read-Host "GitHub repo name (e.g. acme-backend)"
+}
+
+# GCP region: menu of common options or custom
+Write-Host "GCP region: [1] us-central1  [2] us-east1  [3] europe-west1  [4] asia-southeast1  [5] other (type it)" -ForegroundColor Cyan
+$RegionChoice = Read-Host "Choice [1]"
+$Region = switch ($RegionChoice) {
+    "2" { "us-east1" }
+    "3" { "europe-west1" }
+    "4" { "asia-southeast1" }
+    "5" { Read-Host "Enter GCP region (e.g. us-west2)" }
+    default { "us-central1" }
+}
 if (-not $Region) { $Region = "us-central1" }
+Write-Host "  Using region: $Region" -ForegroundColor Gray
 
 $ProjectLabel = $Sanitized.ToLowerInvariant()
 
@@ -337,7 +356,83 @@ $cursorignore = "# {{PROJECT_NAME}} — Add paths to ignore (logs, uploads, etc.
 $configReadme = @'
 # {{XAC_CONFIG_NAME}}
 Project config for {{PROJECT_NAME}}. Shared platform: _XAC_Base/.
-Edit: ci/config.ps1, cursor/*.project, iac/, ci/deploy-staging-shared.yml. Add Dockerfiles in docker/.
+**First time?** See **CUSTOMIZE.md** for what to edit. Then: ci/config.ps1, cursor/*.project, iac/. Add Dockerfiles in _Config_Project/docker/.
+'@
+
+$customizeMd = @'
+# Customize _XAC_Config After Onboarding
+
+The onboarding script filled in **project name, GCP project, GitHub org/repo, and region**. You only need to edit the items below to match your codebase and infra.
+
+---
+
+## 1. CI config — `ci/config.ps1`
+
+Edit these variables so local CI and GitHub Actions match your repo layout.
+
+| Variable | What to set | Example |
+|----------|-------------|---------|
+| `$CI_COMPOSE_FILE` | Path to docker-compose CI file | Already set to `_XAC_Base/ci/templates/docker-compose.ci.yml` |
+| `$CI_PYTHONPATH_EXTRA` | Extra Python path for tests (array) | `@("entrypoint_backend")` or `@()` |
+| `$CI_CATALOG_DIR` | Catalog source dir, or `$null` | `"$ROOT\modules\catalog\data"` or `$null` |
+| `$CI_CATALOG_COMPILE_CMD` | Scriptblock to compile catalog, or `$null` | See existing projects for pattern |
+| `$CI_COMPILEALL_TARGETS` | Paths for `python -m compileall` | `@("backend", "modules/core")` |
+| `$CI_RUFF_EXCLUDES` | Patterns to exclude from ruff | Add your `**/migrations/**`, legacy dirs, etc. |
+| `$CI_MYPY_TARGET` | Path for mypy, or `$null` | `"backend"` or `$null` |
+| `$CI_UNIT_TEST_SETS` | Array of `@{ Name = "…"; Paths = "…" }` | One entry per parallel unit job; Paths = space-separated dirs |
+| `$CI_INTEGRATION_BATCHES` | Array of `@{ Name = "…"; Paths = "…" }` | One entry per integration batch |
+| `$CI_PLAYWRIGHT_DIR` | Dir containing Playwright tests, or `$null` | `"$ROOT\frontend"` or `$null` |
+| `$CI_NODE_JOBS` | Array of `@{ Name = "…"; Dir = "…"; Steps = @("lint", "tsc") }` | Add if you have Node/frontend jobs |
+
+**Tip:** Match `$CI_UNIT_TEST_SETS` and `$CI_INTEGRATION_BATCHES` to the `unit-test-matrix` and `integration-test-matrix` in `.github/workflows/xac-ci.yml` so local CI and GitHub Actions stay in sync.
+
+---
+
+## 2. IaC — `iac/`
+
+| Task | Where |
+|------|--------|
+| Add/change services (e.g. backend, frontend) | `main.tf` — edit the `services` list and `artifact_registry_repo_id` |
+| Add secrets | `main.tf` — add to `secrets` and each service's `secret_ids`; create secrets in GCP |
+| Set billing and alerts | Copy `terraform.tfvars.example` to `terraform.tfvars`, set `billing_account_id`, `alert_email_addresses`. **Do not commit terraform.tfvars.** |
+| State bucket | Ensure GCS bucket `{project_id}-terraform-state` exists; `backend.tf` already points to it |
+
+---
+
+## 3. Cursor — `cursor/`
+
+| File | Purpose |
+|------|---------|
+| `cursorrules.project` | Project-specific agent rules (GCP project, app URL, deploy commands, structure). |
+| `cursorignore.project` | Paths to ignore (logs, uploads, local data). |
+| `rules/*.md` | Optional project rule files; sync to root with your sync script. |
+
+---
+
+## 4. Add _XAC_Base to the repo
+
+If you haven't already:
+
+- **Option A:** In GitHub, go to **Actions → Sync _XAC_Base → Run workflow** (it will add the subtree and open a PR).
+- **Option B:** From repo root: `git subtree add --prefix=_XAC_Base https://github.com/1chrisshannon1-afk/XAC.git main --squash`
+
+---
+
+## 5. Root assembly
+
+- **.cursorrules / .cursorignore:** Assemble from `_XAC_Base/cursor/` + this folder's `cursor/` (see `_XAC_Base/cursor/README.md`).
+- **Docker:** Add Dockerfiles under `_Config_Project/docker/` and point any root docker-compose at them.
+
+---
+
+## Quick reference: what the script already set
+
+- Project name, label, GCP project ID, region
+- GitHub org and repo (used in IaC and runbook URLs)
+- Config folder name (e.g. `_XAC_Config`)
+- `.ci/config.ps1` thin wrapper and `.github/workflows/sync-xac.yml` + `xac-ci.yml`
+
+You only customize paths, test sets, IaC services/secrets, and cursor rules as above.
 '@
 
 $iacMain = @'
@@ -384,6 +479,7 @@ $cicdManifest = "| Path | Purpose |`n|------|---------|`n| {{XAC_CONFIG_NAME}}/c
 
 foreach ($pair in @(
     @{ Path = "README.md"; Content = (Set-Placeholders $configReadme $V) },
+    @{ Path = "CUSTOMIZE.md"; Content = $customizeMd },
     @{ Path = "ci\config.ps1"; Content = (Set-Placeholders $configPs1 $V) },
     @{ Path = "ci\local_ci.ps1"; Content = (Set-Placeholders $localCiPs1 $V) },
     @{ Path = "ci\deploy-staging-shared.yml"; Content = (Set-Placeholders $deployYml $V) },
@@ -414,9 +510,9 @@ Write-Host "  Onboarding Complete" -ForegroundColor Green
 Write-Host "========================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "Next steps:" -ForegroundColor Cyan
-Write-Host "  1. Edit $ConfigFolderName/ci/config.ps1 — paths, test sets, GCP." -ForegroundColor White
-Write-Host "  2. Edit $ConfigFolderName/iac/ — services, secrets, terraform.tfvars." -ForegroundColor White
-Write-Host "  3. Edit $ConfigFolderName/cursor/*.project for your project." -ForegroundColor White
+Write-Host "  1. Open $ConfigFolderName/CUSTOMIZE.md — checklist of what to edit (paths, test sets, IaC, cursor)." -ForegroundColor White
+Write-Host "  2. Edit $ConfigFolderName/ci/config.ps1 — paths, test sets, GCP (see CUSTOMIZE.md)." -ForegroundColor White
+Write-Host "  3. Edit $ConfigFolderName/iac/ — services, secrets, terraform.tfvars." -ForegroundColor White
 Write-Host "  4. Add _XAC_Base: run Actions -> Sync _XAC_Base, or: git subtree add --prefix=_XAC_Base https://github.com/1chrisshannon1-afk/XAC.git main --squash" -ForegroundColor White
-Write-Host "  5. Assemble .cursorrules/.cursorignore (see _XAC_Base/cursor/README.md). Add Dockerfiles in $ConfigFolderName/docker/." -ForegroundColor White
+Write-Host "  5. Assemble .cursorrules/.cursorignore (see _XAC_Base/cursor/README.md). Add Dockerfiles in _Config_Project/docker/." -ForegroundColor White
 Write-Host ""

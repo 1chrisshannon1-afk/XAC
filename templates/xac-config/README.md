@@ -2,6 +2,8 @@
 
 **XAC configuration for {{PROJECT_NAME}}.** Contains only what XAC needs: CI config, Cursor rules overlay, and IaC. Project-specific scripts, Docker, GCP CI/CD, briefs, and docs live in **`_Config_Project/`**.
 
+**→ First time?** See **[CUSTOMIZE.md](CUSTOMIZE.md)** for a step-by-step list of what to edit (paths, test sets, IaC, cursor) and what the script already set for you.
+
 ## Layout (this folder)
 
 | Folder | Purpose |

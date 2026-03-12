@@ -7,7 +7,7 @@
     XAC repo mirrors _XAC (ci/, iac/, monitoring/, docs/). CI_SHARED_PATH is set to .../ci when that layout exists.
 #>
 
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Continue"
 
 if (-not $ROOT) { $ROOT = $PWD.Path }
 $XacPath = Join-Path $ROOT "_XAC"
